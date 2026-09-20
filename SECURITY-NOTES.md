@@ -4,7 +4,7 @@
 
 1. **Server env vars** (host dashboard, and `.env` for local dev; see `.env.example`):
    - `AETHER_ACCESS_CODE`: 16+ random characters (`openssl rand -base64 24`). The server refuses every request without it.
-   - `XAI_API_KEY`: as before.
+   - `AETHER_PROVIDER` and a key: `groq` + `GROQ_API_KEY` (free tier, no card; the phone speaks with its own voice), or leave it unset and use `XAI_API_KEY` (paid). Optional `LLM_MODEL` / `STT_MODEL` override the model names.
 2. **Enter the access code once** in the app: Settings tab, Access code.
 3. **New signing key.** The old keystore and its password (`aether8`) were in the project, so treat that key as burned.
    Run `sh scripts/make-keystore.sh`, then `sh scripts/build-apk.sh` (needs the Android SDK; edit `ANDROID_HOME` in the script if yours isn't at `/tmp/android-sdk`).

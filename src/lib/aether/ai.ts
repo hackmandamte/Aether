@@ -136,26 +136,39 @@ async function authorize(code: string) {
   return gate(code);
 }
 
-async function callXai(
-  path: string,
-  init: { headers?: Record<string, string>; body: string | FormData },
-): Promise<Response | null> {
-  const apiKey = process.env.XAI_API_KEY;
-  if (!apiKey) {
-    console.error("[aether] XAI_API_KEY is not set");
+type Upstream = { headers?: Record<string, string>; body: string | FormData };
+
+async function getProvider() {
+  const { getProvider: resolve } = await import("./provider.server");
+  return resolve();
+}
+
+async function callProvider(url: string, key: string | undefined, init: Upstream) {
+  if (!key) {
+    console.error("[aether] No API key configured for the selected provider");
     return null;
   }
   try {
-    return await fetch(`https://api.x.ai/v1/${path}`, {
+    return await fetch(url, {
       method: "POST",
-      headers: { ...init.headers, Authorization: `Bearer ${apiKey}` },
+      headers: { ...init.headers, Authorization: `Bearer ${key}` },
       body: init.body,
       signal: AbortSignal.timeout(25_000),
     });
   } catch (err) {
-    console.error(`[aether] xAI ${path} request failed:`, err instanceof Error ? err.name : err);
+    console.error("[aether] upstream request failed:", err instanceof Error ? err.name : err);
     return null;
   }
+}
+
+/** Plain-language message for an upstream failure (no upstream text is ever passed on). */
+function describeUpstream(status: number): string {
+  if (status === 401) return "The AI key was rejected. Check it on the server.";
+  if (status === 402 || status === 403) {
+    return "The AI account refused the request (no credit or no access). Check the provider account.";
+  }
+  if (status === 429) return "The AI service is busy or rate-limited. Try again in a minute.";
+  return `Aether's brain hit an error (${status}).`;
 }
 
 function fallbackLine(action: PhoneAction): string {
@@ -232,10 +245,11 @@ export const askAether = createServerFn({ method: "POST" })
     const gate = await authorize(data.accessCode);
     if (!gate.ok) return { ok: false, error: gate.error };
 
-    const res = await callXai("chat/completions", {
+    const provider = await getProvider();
+    const request = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "grok-4.5",
+        model: provider.chatModel,
         max_tokens: 360,
         temperature: 0.7,
         tools: TOOLS,
@@ -244,11 +258,16 @@ export const askAether = createServerFn({ method: "POST" })
           ...data.messages.slice(-12).map((m) => ({ role: m.role, content: m.text })),
         ],
       }),
-    });
+    };
+    let res = await callProvider(provider.chatUrl, provider.key, request);
+    if (res?.status === 400) {
+      // Some open models occasionally produce a malformed tool call; one retry usually fixes it.
+      res = await callProvider(provider.chatUrl, provider.key, request);
+    }
     if (!res) return { ok: false, error: "Aether's brain is unreachable right now." };
     if (!res.ok) {
-      console.error(`[aether] chat/completions -> ${res.status}`);
-      return { ok: false, error: `Aether's brain hit an error (${res.status}).` };
+      console.error(`[aether] chat (${provider.name}) -> ${res.status}`);
+      return { ok: false, error: describeUpstream(res.status) };
     }
 
     const json = (await res.json().catch(() => ({}))) as {
@@ -291,13 +310,19 @@ export const speakAether = createServerFn({ method: "POST" })
     const text = data.text.replace(/[#*_`]/g, "").trim().slice(0, 800);
     if (!text) return { ok: false as const, error: "Nothing to say." };
 
-    const res = await callXai("tts", {
+    const provider = await getProvider();
+    if (!provider.ttsUrl) {
+      // No server voice for this provider: the app speaks with the phone's own voice.
+      return { ok: false as const, error: "Using the phone's voice.", device: true as const };
+    }
+
+    const res = await callProvider(provider.ttsUrl, provider.key, {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, voice_id: data.voice, language: data.language }),
     });
     if (!res) return { ok: false as const, error: "Voice is unavailable." };
     if (!res.ok) {
-      console.error(`[aether] tts -> ${res.status}`);
+      console.error(`[aether] tts (${provider.name}) -> ${res.status}`);
       return { ok: false as const, error: `Voice error ${res.status}` };
     }
 
@@ -324,14 +349,15 @@ export const hearAether = createServerFn({ method: "POST" })
     const ext = mime.includes("mp4") ? "m4a" : mime.includes("wav") ? "wav" : "webm";
     const form = new FormData();
     form.append("file", new Blob([bytes], { type: mime }), `speech.${ext}`);
-    form.append("model", "grok-voice-transcribe-2.0");
+    const provider = await getProvider();
+    form.append("model", provider.sttModel);
     if (data.language) form.append("language", data.language);
 
-    const res = await callXai("stt", { body: form });
+    const res = await callProvider(provider.sttUrl, provider.key, { body: form });
     if (!res) return { ok: false as const, error: "Listening is unavailable." };
     if (!res.ok) {
-      console.error(`[aether] stt -> ${res.status}`);
-      return { ok: false as const, error: `Could not hear that (${res.status}).` };
+      console.error(`[aether] stt (${provider.name}) -> ${res.status}`);
+      return { ok: false as const, error: describeUpstream(res.status) };
     }
 
     const json = (await res.json().catch(() => ({}))) as { text?: string };

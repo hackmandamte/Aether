@@ -193,6 +193,10 @@ export function InstallPanel() {
         <h3 className="text-xs font-medium uppercase tracking-[0.14em] text-faint">
           Voice
         </h3>
+        <p className="text-xs leading-relaxed text-faint">
+          The voice picker applies to xAI voices. On the free setup Aether
+          speaks with your phone&apos;s own voice.
+        </p>
         <div className="flex flex-wrap gap-2">
           {VOICES.map((v) => (
             <Button

@@ -7,12 +7,15 @@ import {
   blobToBase64,
   pickRecorderMime,
   playAudioUrl,
+  speakWithDevice,
 } from "./voice";
 
 let recorder: MediaRecorder | null = null;
 let chunks: Blob[] = [];
 let stream: MediaStream | null = null;
 let playingUrl: string | null = null;
+// Flips to false once the server says it has no voice, so we stop asking every turn.
+let serverVoice = true;
 
 function stopStream() {
   stream?.getTracks().forEach((t) => t.stop());
@@ -142,23 +145,27 @@ export async function sendText(text: string) {
 export async function speak(text: string) {
   const store = useAether.getState();
   store.setListen("speaking");
+  const vol = Math.max(0.2, store.device.volume / 15);
   try {
-    const voice = await speakAether({
-      data: {
-        accessCode: getAccessCode(),
-        text,
-        voice: store.settings.voice,
-        language: store.settings.language,
-      },
-    });
-    if (!voice.ok) {
-      store.setListen("idle");
-      return;
+    if (serverVoice) {
+      const voice = await speakAether({
+        data: {
+          accessCode: getAccessCode(),
+          text,
+          voice: store.settings.voice,
+          language: store.settings.language,
+        },
+      });
+      if (voice.ok) {
+        if (playingUrl) URL.revokeObjectURL(playingUrl);
+        playingUrl = base64ToAudioUrl(voice.audioBase64, voice.mimeType);
+        await playAudioUrl(playingUrl, vol);
+        return;
+      }
+      if ("device" in voice && voice.device) serverVoice = false;
     }
-    if (playingUrl) URL.revokeObjectURL(playingUrl);
-    playingUrl = base64ToAudioUrl(voice.audioBase64, voice.mimeType);
-    const vol = Math.max(0.2, store.device.volume / 15);
-    await playAudioUrl(playingUrl, vol);
+    // No server voice (free provider) or it failed: use the phone's own voice.
+    await speakWithDevice(text, store.settings.language, vol);
   } catch {
     /* autoplay or network — text is already on screen */
   } finally {

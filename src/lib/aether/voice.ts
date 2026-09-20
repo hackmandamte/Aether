@@ -36,3 +36,45 @@ export async function playAudioUrl(url: string, volume = 0.85) {
     audio.onerror = () => reject(new Error("Playback failed"));
   });
 }
+
+const DEVICE_LANG: Record<string, string> = {
+  en: "en-US",
+  fr: "fr-FR",
+  hi: "hi-IN",
+  ar: "ar-SA",
+  sw: "sw-KE",
+  es: "es-ES",
+  pt: "pt-BR",
+};
+
+/** True when the phone/browser has its own text-to-speech. */
+export function hasDeviceVoice(): boolean {
+  return typeof window !== "undefined" && "speechSynthesis" in window;
+}
+
+/** Speak with the phone's built-in voice. Free, works offline, sounds more robotic. */
+export function speakWithDevice(text: string, language: string, volume = 0.85): Promise<void> {
+  return new Promise((resolve) => {
+    if (!hasDeviceVoice() || !text.trim()) {
+      resolve();
+      return;
+    }
+    const synth = window.speechSynthesis;
+    synth.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = DEVICE_LANG[language] ?? "en-US";
+    utterance.volume = Math.min(1, Math.max(0.15, volume));
+    // Some engines never fire end/error; don't leave the orb stuck on "speaking".
+    const guard = window.setTimeout(() => {
+      synth.cancel();
+      resolve();
+    }, 45_000);
+    const done = () => {
+      window.clearTimeout(guard);
+      resolve();
+    };
+    utterance.onend = done;
+    utterance.onerror = done;
+    synth.speak(utterance);
+  });
+}
