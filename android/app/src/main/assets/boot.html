@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+    <title>Aether</title>
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        font-family: system-ui, sans-serif;
+        background: #0a0b0d;
+        color: #f2f3f5;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 32px 24px;
+      }
+      h1 { font-weight: 500; letter-spacing: -0.03em; margin: 0 0 8px; }
+      p { color: #9aa0ab; line-height: 1.5; }
+      p.err { color: #f0a3a3; }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        margin: 16px 0;
+        padding: 14px 16px;
+        border: 0;
+        border-radius: 12px;
+        background: #13151a;
+        color: #f2f3f5;
+        box-shadow: 0 0 0 1px rgba(255,255,255,.08);
+      }
+      button {
+        width: 100%;
+        height: 48px;
+        border: 0;
+        border-radius: 12px;
+        background: #d7dde6;
+        color: #0a0b0d;
+        font-weight: 600;
+        margin-bottom: 12px;
+      }
+      button.quiet { background: #13151a; color: #f2f3f5; }
+    </style>
+  </head>
+  <body>
+    <h1>Aether</h1>
+    <p id="err" class="err" hidden>Couldn't reach your Aether site. Check your connection, or enter a different link.</p>
+    <p>Paste your Aether site link (https://…) from Chrome on this phone, then Connect. You'll be asked to confirm. Only connect to a site you run.</p>
+    <input id="origin" placeholder="https://…" inputmode="url" autocapitalize="none" autocomplete="off" />
+    <button id="go">Connect</button>
+    <button id="retry" class="quiet" hidden>Try again</button>
+    <script>
+      if (location.search.indexOf("error=1") !== -1) {
+        document.getElementById("err").hidden = false;
+        document.getElementById("retry").hidden = false;
+      }
+      document.getElementById("go").onclick = function () {
+        var v = document.getElementById("origin").value.trim();
+        if (!v) return;
+        if (!/^https?:\/\//i.test(v)) v = "https://" + v;
+        location.href = "aether://configure?origin=" + encodeURIComponent(v.replace(/\/$/, ""));
+      };
+      document.getElementById("retry").onclick = function () {
+        location.href = "aether://retry";
+      };
+    </script>
+  </body>
+</html>

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Aether</string>
+    <string name="accessibility_description">Aether uses Accessibility to press Home, Back, Recents, and Lock when you ask by voice. Nothing is sent off-device except the commands you speak to Aether.</string>
+</resources>
