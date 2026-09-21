@@ -6,6 +6,7 @@ import { Transcript } from "./transcript";
 import { isNativeBridge } from "@/lib/aether/native";
 import { greetOnce, stopEverything, tapOrb } from "@/lib/aether/session";
 import { useAether } from "@/lib/aether/store";
+import { warmUpDeviceVoice } from "@/lib/aether/voice";
 
 function timeGreeting(): string {
   const h = new Date().getHours();
@@ -25,9 +26,20 @@ export function AetherShell() {
   useEffect(() => {
     setMounted(true);
     setInApp(isNativeBridge());
+    warmUpDeviceVoice();
   }, []);
 
-  // Sync theme to <html data-theme="…">
+  // First tap unlocks audio on strict mobile browsers
+  useEffect(() => {
+    const unlock = () => warmUpDeviceVoice();
+    window.addEventListener("pointerdown", unlock, { once: true, passive: true });
+    window.addEventListener("touchstart", unlock, { once: true, passive: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("touchstart", unlock);
+    };
+  }, []);
+
   useEffect(() => {
     const theme = settings.theme === "light" ? "light" : "dark";
     document.documentElement.setAttribute("data-theme", theme);
