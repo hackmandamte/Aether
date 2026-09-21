@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { sendText } from "@/lib/aether/session";
 import { useAether } from "@/lib/aether/store";
 import { cn } from "@/lib/utils";
 
@@ -9,6 +10,13 @@ function timeGreeting(): string {
   return "Good evening";
 }
 
+const SUGGESTIONS = [
+  "Turn on the flashlight",
+  "Open WhatsApp",
+  "Where am I?",
+  "Search the web for weather",
+] as const;
+
 export function Transcript() {
   const messages = useAether((s) => s.messages);
   const error = useAether((s) => s.error);
@@ -16,6 +24,7 @@ export function Transcript() {
   const listen = useAether((s) => s.listen);
   const bottom = useRef<HTMLDivElement>(null);
   const [greeting] = useState(timeGreeting);
+  const busy = listen !== "idle";
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -24,7 +33,6 @@ export function Transcript() {
   if (!messages.length && !error && !steps.length) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center px-6 py-10 animate-[eta-fade-in_0.55s_ease-out]">
-        {/* Soft glowing orb */}
         <div className="relative mb-8 grid size-28 place-items-center">
           <span className="absolute inset-0 rounded-full bg-accent/10 animate-[eta-pulse_3s_ease-in-out_infinite]" />
           <span className="absolute inset-3 rounded-full bg-accent/15 animate-[eta-pulse_3s_ease-in-out_0.4s_infinite]" />
@@ -35,22 +43,29 @@ export function Transcript() {
           {greeting}
         </p>
         <p className="mt-2 max-w-[17rem] text-center text-sm leading-relaxed text-muted">
-          I'm Eta, your personal mobile assistant. Tap the mic or type below.
+          I'm Eta, your personal mobile assistant. Tap the mic, type below, or try a suggestion.
         </p>
 
         <ul className="mt-8 w-full max-w-sm space-y-2">
-          {[
-            "Turn on the flashlight",
-            "Open WhatsApp",
-            "Where am I?",
-            "Search the web for weather",
-          ].map((hint, i) => (
+          {SUGGESTIONS.map((hint, i) => (
             <li
               key={hint}
-              className="rounded-2xl border border-border/70 bg-elevated/70 px-4 py-3 text-center text-sm text-muted animate-[eta-fade-in_0.5s_ease-out]"
+              className="animate-[eta-fade-in_0.5s_ease-out]"
               style={{ animationDelay: `${0.12 + i * 0.06}s`, animationFillMode: "both" }}
             >
-              {hint}
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void sendText(hint)}
+                className={cn(
+                  "w-full rounded-2xl border border-border/70 bg-elevated/70 px-4 py-3 text-center text-sm text-muted",
+                  "transition-[background-color,border-color,color,transform] duration-150",
+                  "hover:border-border-strong hover:bg-subtle hover:text-fg active:scale-[0.98]",
+                  "disabled:pointer-events-none disabled:opacity-50",
+                )}
+              >
+                {hint}
+              </button>
             </li>
           ))}
         </ul>
