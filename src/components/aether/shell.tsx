@@ -1,4 +1,4 @@
-import { Menu } from "lucide-react";
+import { Menu, Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Composer } from "./composer";
 import { Drawer } from "./drawer";
@@ -18,6 +18,7 @@ export function AetherShell() {
   const device = useAether((s) => s.device);
   const settings = useAether((s) => s.settings);
   const setDrawerOpen = useAether((s) => s.setDrawerOpen);
+  const setTheme = useAether((s) => s.setTheme);
   const [mounted, setMounted] = useState(false);
   const [inApp, setInApp] = useState(false);
 
@@ -26,7 +27,12 @@ export function AetherShell() {
     setInApp(isNativeBridge());
   }, []);
 
-  // First launch inside the Android app: speak a time-aware hello.
+  // Sync theme to <html data-theme="…">
+  useEffect(() => {
+    const theme = settings.theme === "light" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [settings.theme]);
+
   useEffect(() => {
     if (mounted && inApp && !settings.onboarded) void greetOnce();
   }, [mounted, inApp, settings.onboarded]);
@@ -35,7 +41,6 @@ export function AetherShell() {
     return () => stopEverything();
   }, []);
 
-  // Spacebar = tap mic (desktop)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== "Space" || e.repeat) return;
@@ -47,16 +52,17 @@ export function AetherShell() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  const isLight = settings.theme === "light";
+
   return (
-    <div className="relative mx-auto flex h-dvh w-full max-w-3xl flex-col bg-bg">
+    <div className="relative mx-auto flex h-dvh w-full max-w-3xl flex-col bg-bg transition-colors duration-300">
       {device.flashlight ? (
         <div className="pointer-events-none absolute inset-0 z-20 bg-[#f4f1e6]/70 mix-blend-screen" />
       ) : null}
 
       <Drawer />
 
-      {/* Top bar — minimal */}
-      <header className="flex shrink-0 items-center gap-2 border-b border-border/60 px-2 py-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
+      <header className="flex shrink-0 items-center gap-1 border-b border-border/60 px-2 py-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
         <button
           type="button"
           onClick={() => setDrawerOpen(true)}
@@ -69,15 +75,25 @@ export function AetherShell() {
           <p className="truncate font-display text-[15px] font-medium tracking-tight">Eta</p>
           <p className="truncate text-[11px] text-faint">{timeGreeting()}</p>
         </div>
+        <button
+          type="button"
+          onClick={() => setTheme(isLight ? "dark" : "light")}
+          className="grid size-11 place-items-center rounded-full text-muted transition-colors hover:bg-subtle hover:text-fg"
+          aria-label={isLight ? "Switch to dark mode" : "Switch to light mode"}
+        >
+          {isLight ? (
+            <Moon className="size-5" strokeWidth={1.75} />
+          ) : (
+            <Sun className="size-5" strokeWidth={1.75} />
+          )}
+        </button>
       </header>
 
-      {/* Chat fills the middle */}
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <Transcript />
       </main>
 
-      {/* Input bar pinned to bottom */}
-      <div className="shrink-0 border-t border-border/60 bg-bg pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2">
+      <div className="shrink-0 border-t border-border/60 bg-bg pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 transition-colors duration-300">
         <Composer />
       </div>
     </div>
