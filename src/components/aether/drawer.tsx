@@ -2,6 +2,7 @@ import {
   Bluetooth,
   Flashlight,
   MessageSquarePlus,
+  Moon,
   Settings2,
   StickyNote,
   Sun,
@@ -23,6 +24,7 @@ export function Drawer() {
   const clearMessages = useAether((s) => s.clearMessages);
   const settings = useAether((s) => s.settings);
   const setLanguage = useAether((s) => s.setLanguage);
+  const setTheme = useAether((s) => s.setTheme);
   const device = useAether((s) => s.device);
   const notes = useAether((s) => s.notes);
   const deleteNote = useAether((s) => s.deleteNote);
@@ -51,6 +53,8 @@ export function Drawer() {
     clearMessages();
     setDrawerOpen(false);
   }
+
+  const isLight = settings.theme === "light";
 
   return (
     <>
@@ -176,6 +180,28 @@ export function Drawer() {
               >
                 ← Back
               </button>
+
+              <div>
+                <p className="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-faint">
+                  Appearance
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant={!isLight ? "primary" : "quiet"}
+                    onClick={() => setTheme("dark")}
+                  >
+                    <Moon className="size-3.5" /> Dark
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={isLight ? "primary" : "quiet"}
+                    onClick={() => setTheme("light")}
+                  >
+                    <Sun className="size-3.5" /> Light
+                  </Button>
+                </div>
+              </div>
 
               <div>
                 <p className="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-faint">
