@@ -30,7 +30,7 @@ let playingUrl: string | null = null;
 // Flips to false once the server says it has no voice, so we stop asking every turn.
 let serverVoice = true;
 
-const OFFLINE = "Couldn't reach Aether. Check your connection.";
+const OFFLINE = "Couldn't reach Eta. Check your connection.";
 const DIDNT_HEAR = "I didn't hear anything. Tap the disc and try again.";
 
 // ---------------------------------------------------------------------------
@@ -351,11 +351,12 @@ async function runTurn(text: string, id: number) {
     trace: store().steps.slice(-8),
   });
 
+  // Always speak the reply out loud while the text is shown.
   await speak(spoken, id);
 }
 
 const GREETING =
-  "Hi, I'm Aether, your personal assistant. Tap the disc and talk to me, or long-press Home.";
+  "Hello, I am Eta, your personal mobile assistant. Tap the disc and talk to me.";
 
 /** First launch inside the app: say hello once, then get out of the way. */
 export async function greetOnce() {
@@ -372,6 +373,7 @@ export async function speak(text: string, id: number = ++runId) {
   step("Speaking");
   const vol = Math.max(0.2, s.device.volume / 15);
   try {
+    // Prefer server TTS (xAI) when available — higher quality, plays as real audio.
     if (serverVoice) {
       const voice = await speakAether({
         data: {
@@ -388,13 +390,19 @@ export async function speak(text: string, id: number = ++runId) {
         await playAudioUrl(playingUrl, vol);
         return;
       }
+      // Provider has no TTS (e.g. Groq) — fall through to device voice and remember.
       if ("device" in voice && voice.device) serverVoice = false;
     }
-    // No server voice (free provider) or it failed: use the phone's own voice.
+    // Fallback: phone/browser built-in speechSynthesis (always try so text is spoken).
     if (id !== runId) return;
     await speakWithDevice(text, s.settings.language, vol);
   } catch {
-    /* autoplay or network — text is already on screen */
+    /* autoplay or network — text is already on screen; still try device voice once */
+    try {
+      if (id === runId) await speakWithDevice(text, s.settings.language, vol);
+    } catch {
+      /* ignore */
+    }
   } finally {
     if (id === runId) {
       store().setSteps([]);
