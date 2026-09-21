@@ -10,9 +10,9 @@ export function Composer() {
   const steps = useAether((s) => s.steps);
   const busy = listen !== "idle";
   const recording = listen === "recording";
+  const speaking = listen === "speaking";
   const taRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-grow textarea up to a few lines
   useEffect(() => {
     const el = taRef.current;
     if (!el) return;
@@ -24,7 +24,7 @@ export function Composer() {
     listen === "recording"
       ? "Listening… tap mic when done"
       : listen === "thinking"
-        ? steps[steps.length - 1] ?? "Thinking…"
+        ? (steps[steps.length - 1] ?? "Thinking…")
         : listen === "speaking"
           ? "Speaking…"
           : null;
@@ -50,31 +50,60 @@ export function Composer() {
           void sendText(next);
         }}
       >
-        {/* Mic / Stop */}
-        <button
-          type="button"
-          onClick={() => {
-            if (busy && !recording) stopEverything();
-            else void tapOrb();
-          }}
-          aria-label={
-            recording ? "Send voice" : busy ? "Stop" : "Tap to speak"
-          }
-          className={cn(
-            "grid size-11 shrink-0 place-items-center rounded-full transition-[background-color,scale] duration-150 active:scale-95",
-            recording
-              ? "bg-danger/20 text-danger"
-              : busy
-                ? "bg-subtle text-muted"
-                : "bg-accent text-accent-fg",
-          )}
-        >
-          {busy && !recording ? (
-            <Square className="size-3.5 fill-current" />
-          ) : (
-            <Mic className="size-5" strokeWidth={1.75} />
-          )}
-        </button>
+        {/* Mic / Stop with pulse while recording */}
+        <div className="relative grid size-11 shrink-0 place-items-center">
+          {recording ? (
+            <>
+              <span
+                className="pointer-events-none absolute inset-0 rounded-full border border-danger/40"
+                style={{ animation: "eta-mic-ring 1.4s ease-out infinite" }}
+              />
+              <span
+                className="pointer-events-none absolute inset-0 rounded-full border border-danger/30"
+                style={{ animation: "eta-mic-ring 1.4s ease-out 0.35s infinite" }}
+              />
+            </>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={() => {
+              if (busy && !recording) stopEverything();
+              else void tapOrb();
+            }}
+            aria-label={recording ? "Send voice" : busy ? "Stop" : "Tap to speak"}
+            className={cn(
+              "relative z-10 grid size-11 place-items-center rounded-full transition-[background-color,scale] duration-150 active:scale-95",
+              recording
+                ? "bg-danger/20 text-danger"
+                : busy
+                  ? "bg-subtle text-muted"
+                  : "bg-accent text-accent-fg",
+              recording && "animate-[eta-mic-glow_1.6s_ease-in-out_infinite]",
+            )}
+          >
+            {busy && !recording ? (
+              speaking ? (
+                <span className="flex h-4 items-end gap-[3px]">
+                  {[0, 1, 2, 3].map((i) => (
+                    <span
+                      key={i}
+                      className="w-[2.5px] origin-bottom rounded-full bg-current"
+                      style={{
+                        height: "100%",
+                        animation: `aether-speak 0.85s ease-in-out ${i * 0.09}s infinite`,
+                      }}
+                    />
+                  ))}
+                </span>
+              ) : (
+                <Square className="size-3.5 fill-current" />
+              )
+            ) : (
+              <Mic className="size-5" strokeWidth={1.75} />
+            )}
+          </button>
+        </div>
 
         <label className="sr-only" htmlFor="eta-input">
           Message Eta
