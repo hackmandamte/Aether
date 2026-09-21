@@ -1,12 +1,14 @@
 import { getAccessCode } from "./access";
-import { askAether, hearAether, toChatPayload } from "./ai";
+import { askAether, hearAether, speakAether, toChatPayload } from "./ai";
 import { getNativeAccessCode, runPhoneActions } from "./native";
 import { createVad } from "./silence";
 import { useAether } from "./store";
 import { resolveVoiceId, type PhoneAction } from "./types";
 import {
+  base64ToAudioUrl,
   blobToBase64,
   pickRecorderMime,
+  playAudioUrl,
   speakWithDevice,
   stopAudio,
   stopDeviceVoice,
@@ -344,18 +346,56 @@ export async function greetOnce() {
   await speak(line, ++runId);
 }
 
-/** Phone built-in text-to-speech with the user's chosen voice profile. */
+/**
+ * Speak online first (server synthesizes neural audio — nothing downloaded to the phone).
+ * Only if the network TTS fails do we fall back to the phone engine.
+ */
 export async function speak(text: string, id: number = ++runId) {
   const s = store();
   s.setListen("speaking");
   step("Speaking");
-  const vol = Math.max(0.25, s.device.volume / 15);
+  const vol = Math.max(0.35, s.device.volume / 15);
   const voice = resolveVoiceId(s.settings.voice);
+  const language = s.settings.language;
+
   try {
     if (id !== runId) return;
-    await speakWithDevice(text, s.settings.language, vol, voice);
+
+    // Online path — same idea as Jarvis clones: cloud TTS → play MP3
+    const remote = await speakAether({
+      data: {
+        accessCode: await accessCode(),
+        text,
+        voice,
+        language,
+      },
+    });
+
+    if (id !== runId) return;
+
+    if (remote.ok && "audioBase64" in remote && remote.audioBase64) {
+      const url = base64ToAudioUrl(remote.audioBase64, remote.mimeType || "audio/mpeg");
+      try {
+        await playAudioUrl(url, vol);
+      } finally {
+        try {
+          URL.revokeObjectURL(url);
+        } catch {
+          /* ignore */
+        }
+      }
+      return;
+    }
+
+    // Last resort only
+    step("Online voice busy, using phone voice");
+    await speakWithDevice(text, language, vol, voice);
   } catch {
-    /* text is already on screen */
+    try {
+      await speakWithDevice(text, language, vol, voice);
+    } catch {
+      /* text stays on screen */
+    }
   } finally {
     if (id === runId) {
       store().setSteps([]);
