@@ -20,6 +20,7 @@ export const LANGUAGES = [
 
 export type LanguageId = (typeof LANGUAGES)[number]["id"];
 
+/** @deprecated tabs removed — kept for persist migration */
 export type TabId = "assist" | "device" | "notes" | "install";
 
 export type PhoneActionName =
@@ -55,7 +56,7 @@ export type ChatMessage = {
   text: string;
   at: number;
   actions?: PhoneAction[];
-  /** The steps Aether went through for this reply, shown under it. */
+  /** Steps Eta went through for this reply. */
   trace?: string[];
 };
 
