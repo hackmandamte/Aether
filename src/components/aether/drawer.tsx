@@ -14,7 +14,8 @@ import { useEffect, useState } from "react";
 import { getAccessCode, setAccessCode } from "@/lib/aether/access";
 import { getNativeAccessCode, isNativeBridge, runPhoneAction } from "@/lib/aether/native";
 import { useAether } from "@/lib/aether/store";
-import { LANGUAGES } from "@/lib/aether/types";
+import { LANGUAGES, VOICES, resolveVoiceId } from "@/lib/aether/types";
+import { speakWithDevice } from "@/lib/aether/voice";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +26,7 @@ export function Drawer() {
   const settings = useAether((s) => s.settings);
   const setLanguage = useAether((s) => s.setLanguage);
   const setTheme = useAether((s) => s.setTheme);
+  const setVoice = useAether((s) => s.setVoice);
   const device = useAether((s) => s.device);
   const notes = useAether((s) => s.notes);
   const deleteNote = useAether((s) => s.deleteNote);
@@ -33,6 +35,7 @@ export function Drawer() {
   const [code, setCode] = useState("");
   const [hasCode, setHasCode] = useState(false);
   const [managed, setManaged] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
 
   useEffect(() => {
     if (!open) {
@@ -54,7 +57,23 @@ export function Drawer() {
     setDrawerOpen(false);
   }
 
+  async function previewVoice(id: (typeof VOICES)[number]["id"]) {
+    setVoice(id);
+    setPreviewing(true);
+    try {
+      await speakWithDevice(
+        "Hello, I am Eta, your personal mobile assistant.",
+        settings.language,
+        Math.max(0.3, device.volume / 15),
+        id,
+      );
+    } finally {
+      setPreviewing(false);
+    }
+  }
+
   const isLight = settings.theme === "light";
+  const activeVoice = resolveVoiceId(settings.voice);
 
   return (
     <>
@@ -183,6 +202,42 @@ export function Drawer() {
 
               <div>
                 <p className="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-faint">
+                  Voice
+                </p>
+                <p className="mb-3 text-xs text-muted">
+                  Uses your phone's text-to-speech. Tap a style to select and hear a sample.
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {VOICES.map((v) => (
+                    <button
+                      key={v.id}
+                      type="button"
+                      disabled={previewing}
+                      onClick={() => void previewVoice(v.id)}
+                      className={cn(
+                        "rounded-xl border px-3 py-2.5 text-left transition-colors",
+                        activeVoice === v.id
+                          ? "border-accent bg-accent text-accent-fg"
+                          : "border-border/70 bg-subtle/60 text-fg hover:bg-subtle",
+                        previewing && "opacity-60",
+                      )}
+                    >
+                      <span className="block text-sm font-medium">{v.label}</span>
+                      <span
+                        className={cn(
+                          "mt-0.5 block text-[11px]",
+                          activeVoice === v.id ? "opacity-80" : "text-faint",
+                        )}
+                      >
+                        {v.gender === "female" ? "Female" : "Male"} · {v.tone}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-faint">
                   Appearance
                 </p>
                 <div className="flex gap-2">
@@ -208,7 +263,7 @@ export function Drawer() {
                   Language
                 </p>
                 <p className="mb-2 text-xs text-muted">
-                  Voice uses your phone's built-in speech in this language.
+                  Speech uses your phone's voices in this language when available.
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {LANGUAGES.map((l) => (
