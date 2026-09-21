@@ -17,7 +17,7 @@ import {
   Volume2,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { sendText } from "@/lib/aether/session";
 import { useAether } from "@/lib/aether/store";
 import { cn } from "@/lib/utils";
@@ -34,10 +34,6 @@ type Suggestion = {
   icon: LucideIcon;
 };
 
-/**
- * Full pool — welcome chips are a rotating sample so the screen stays alive.
- * Icons are semantic (Lucide dropped trademark brand marks).
- */
 const SUGGESTION_POOL: Suggestion[] = [
   { text: "Turn on the flashlight", icon: Flashlight },
   { text: "Turn off the flashlight", icon: Flashlight },
@@ -61,29 +57,11 @@ const SUGGESTION_POOL: Suggestion[] = [
   { text: "Open Wi-Fi settings", icon: Settings },
 ];
 
-function mulberry32(seed: number) {
-  return () => {
-    let t = (seed += 0x6d2b79f5);
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function dayBlockSeed(now = new Date()): number {
-  const y = now.getFullYear();
-  const m = now.getMonth() + 1;
-  const d = now.getDate();
-  // 4 blocks per day → set changes through the day, not only overnight
-  const block = Math.floor(now.getHours() / 6);
-  return y * 100_000 + m * 1_000 + d * 10 + block;
-}
-
-function pickSuggestions(count = 4, now = new Date()): Suggestion[] {
-  const rand = mulberry32(dayBlockSeed(now));
+/** Fresh random 4 every time the welcome screen mounts (each app open / new chat). */
+function pickSuggestions(count = 4): Suggestion[] {
   const pool = [...SUGGESTION_POOL];
   for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(rand() * (i + 1));
+    const j = Math.floor(Math.random() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
   return pool.slice(0, count);
@@ -96,15 +74,9 @@ export function Transcript() {
   const listen = useAether((s) => s.listen);
   const bottom = useRef<HTMLDivElement>(null);
   const [greeting] = useState(timeGreeting);
+  // New shuffle every mount — opening the app or clearing chat refreshes the set
+  const [suggestions] = useState(() => pickSuggestions(4));
   const busy = listen !== "idle";
-
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    const id = window.setInterval(() => setTick((t) => t + 1), 60_000);
-    return () => window.clearInterval(id);
-  }, []);
-
-  const suggestions = useMemo(() => pickSuggestions(4), [tick]);
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
