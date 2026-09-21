@@ -117,3 +117,15 @@
     transform: translateY(0);
   }
 }
+
+@keyframes eta-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.45;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 0.85;
+  }
+}
