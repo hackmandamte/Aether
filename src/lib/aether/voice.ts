@@ -54,7 +54,96 @@ export function stopAudio() {
   if (audio) audio.pause();
 }
 
+type NativeChannel = {
+  postMessage: (message: string) => void;
+  addEventListener: (type: "message", listener: (event: { data: unknown }) => void) => void;
+};
+
+declare global {
+  interface Window {
+    AetherNative?: NativeChannel;
+  }
+}
+
+function hasNativeBridge(): boolean {
+  return typeof window !== "undefined" && typeof window.AetherNative?.postMessage === "function";
+}
+
+const pendingSpeak = new Map<string, (ok: boolean) => void>();
+let speakListening = false;
+
+function listenSpeakReplies(channel: NativeChannel) {
+  if (speakListening) return;
+  speakListening = true;
+  channel.addEventListener("message", (event) => {
+    try {
+      const msg = JSON.parse(String(event.data)) as {
+        id?: string;
+        result?: { ok?: boolean };
+      };
+      const done = msg.id ? pendingSpeak.get(msg.id) : undefined;
+      if (done) {
+        pendingSpeak.delete(msg.id!);
+        done(Boolean(msg.result?.ok));
+      }
+    } catch {
+      /* ignore */
+    }
+  });
+}
+
+/** Speak via the APK's real TextToSpeech engine. */
+function speakNative(
+  text: string,
+  language: string,
+  rate: number,
+  pitch: number,
+): Promise<boolean> {
+  const channel = window.AetherNative;
+  if (!channel) return Promise.resolve(false);
+  listenSpeakReplies(channel);
+
+  return new Promise((resolve) => {
+    const id = crypto.randomUUID();
+    const timer = window.setTimeout(() => {
+      pendingSpeak.delete(id);
+      resolve(false);
+    }, 4000);
+    pendingSpeak.set(id, (ok) => {
+      window.clearTimeout(timer);
+      resolve(ok);
+    });
+    try {
+      channel.postMessage(
+        JSON.stringify({
+          id,
+          type: "speak",
+          text,
+          language,
+          rate,
+          pitch,
+        }),
+      );
+    } catch {
+      window.clearTimeout(timer);
+      pendingSpeak.delete(id);
+      resolve(false);
+    }
+  });
+}
+
+function stopNativeVoice() {
+  const channel = window.AetherNative;
+  if (!channel) return;
+  try {
+    channel.postMessage(JSON.stringify({ id: crypto.randomUUID(), type: "stop_speak" }));
+  } catch {
+    /* ignore */
+  }
+}
+
 export function stopDeviceVoice() {
+  stopNativeVoice();
   if (hasDeviceVoice()) window.speechSynthesis.cancel();
 }
 
@@ -72,7 +161,6 @@ export function hasDeviceVoice(): boolean {
   return typeof window !== "undefined" && "speechSynthesis" in window;
 }
 
-/** Wait until the OS exposes voices (Android often returns [] on the first call). */
 export function loadVoices(): Promise<SpeechSynthesisVoice[]> {
   if (!hasDeviceVoice()) return Promise.resolve([]);
   const synth = window.speechSynthesis;
@@ -88,7 +176,6 @@ export function loadVoices(): Promise<SpeechSynthesisVoice[]> {
       resolve(synth.getVoices());
     };
     synth.addEventListener("voiceschanged", finish);
-    // Kick engines that need a touch
     void synth.getVoices();
     window.setTimeout(finish, 800);
   });
@@ -105,8 +192,28 @@ function scoreVoice(
   if (v.lang.toLowerCase() === lang.toLowerCase()) score += 6;
   if (v.default) score += 2;
 
-  const femaleHints = ["female", "woman", "zira", "samantha", "karen", "moira", "fiona", "tessa", "veena", "google us english female", "en-us-x-sfg"];
-  const maleHints = ["male", "man", "david", "mark", "daniel", "alex", "fred", "google us english male", "en-us-x-tpd"];
+  const femaleHints = [
+    "female",
+    "woman",
+    "zira",
+    "samantha",
+    "karen",
+    "moira",
+    "fiona",
+    "tessa",
+    "veena",
+    "google us english female",
+  ];
+  const maleHints = [
+    "male",
+    "man",
+    "david",
+    "mark",
+    "daniel",
+    "alex",
+    "fred",
+    "google us english male",
+  ];
 
   if (gender === "female") {
     if (femaleHints.some((h) => name.includes(h))) score += 8;
@@ -116,7 +223,6 @@ function scoreVoice(
     if (femaleHints.some((h) => name.includes(h))) score -= 6;
   }
 
-  // Prefer local / higher quality when labeled
   if (name.includes("enhanced") || name.includes("premium") || name.includes("neural")) score += 3;
   if (v.localService) score += 1;
   return score;
@@ -141,26 +247,17 @@ function pickVoice(
   return best;
 }
 
-/**
- * Speak with the phone's built-in TTS.
- * Applies selected voice profile (gender preference + rate/pitch mood).
- */
-export async function speakWithDevice(
-  text: string,
+async function speakWeb(
+  clean: string,
   language: string,
-  volume = 0.85,
-  voiceId: VoiceId | string = "warm-f",
+  volume: number,
+  profile: (typeof VOICES)[number],
 ): Promise<void> {
-  const clean = text.replace(/\s+/g, " ").trim();
-  if (!hasDeviceVoice() || !clean) return;
-
-  const profile =
-    VOICES.find((v) => v.id === resolveVoiceId(voiceId)) ?? VOICES.find((v) => v.id === "warm-f")!;
+  if (!hasDeviceVoice()) return;
 
   const synth = window.speechSynthesis;
-  // cancel() then immediate speak() is flaky on Android WebView — pause briefly
   synth.cancel();
-  await new Promise((r) => window.setTimeout(r, 60));
+  await new Promise((r) => window.setTimeout(r, 80));
 
   const voices = await loadVoices();
   const chosen = pickVoice(voices, language, profile.gender);
@@ -171,12 +268,12 @@ export async function speakWithDevice(
     if (chosen) utterance.voice = chosen;
     utterance.rate = profile.rate;
     utterance.pitch = profile.pitch;
-    utterance.volume = Math.min(1, Math.max(0.2, volume));
+    utterance.volume = Math.min(1, Math.max(0.35, volume));
 
     const guard = window.setTimeout(() => {
       synth.cancel();
       resolve();
-    }, Math.min(60_000, 2_000 + clean.length * 80));
+    }, Math.min(60_000, 2_500 + clean.length * 90));
 
     const done = () => {
       window.clearTimeout(guard);
@@ -187,24 +284,61 @@ export async function speakWithDevice(
 
     try {
       synth.speak(utterance);
-      // Chrome bug: paused synthesis after tab background — resume
       if (synth.paused) synth.resume();
+      // Android Chrome sometimes needs a second kick
+      window.setTimeout(() => {
+        if (synth.paused) synth.resume();
+      }, 120);
     } catch {
       done();
     }
   });
 }
 
-/** One-shot warm-up so the first real reply isn't silent on Android. */
+/**
+ * Speak a reply.
+ * 1) APK native TextToSpeech (reliable)
+ * 2) Browser speechSynthesis fallback
+ */
+export async function speakWithDevice(
+  text: string,
+  language: string,
+  volume = 0.9,
+  voiceId: VoiceId | string = "warm-f",
+): Promise<void> {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!clean) return;
+
+  const profile =
+    VOICES.find((v) => v.id === resolveVoiceId(voiceId)) ?? VOICES.find((v) => v.id === "warm-f")!;
+
+  if (hasNativeBridge()) {
+    const ok = await speakNative(clean, language, profile.rate, profile.pitch);
+    if (ok) {
+      // Approximate speak duration so UI doesn't snap to idle instantly
+      const ms = Math.min(45_000, 800 + clean.length * 55);
+      await new Promise((r) => window.setTimeout(r, ms));
+      return;
+    }
+  }
+
+  await speakWeb(clean, language, volume, profile);
+}
+
 export function warmUpDeviceVoice() {
+  if (hasNativeBridge()) {
+    // Nudge native TTS init
+    void speakNative(" ", "en", 1, 1);
+    return;
+  }
   if (!hasDeviceVoice()) return;
   void loadVoices();
   try {
-    const u = new SpeechSynthesisUtterance(" ");
-    u.volume = 0;
+    const u = new SpeechSynthesisUtterance(".");
+    u.volume = 0.01;
     u.rate = 2;
     window.speechSynthesis.speak(u);
-    window.speechSynthesis.cancel();
+    window.setTimeout(() => window.speechSynthesis.cancel(), 50);
   } catch {
     /* ignore */
   }
