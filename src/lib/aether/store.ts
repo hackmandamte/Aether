@@ -1,13 +1,14 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type {
-  ChatMessage,
-  LanguageId,
-  NoteItem,
-  PhoneAction,
-  ReminderItem,
-  TimerItem,
-  VoiceId,
+import {
+  resolveVoiceId,
+  type ChatMessage,
+  type LanguageId,
+  type NoteItem,
+  type PhoneAction,
+  type ReminderItem,
+  type TimerItem,
+  type VoiceId,
 } from "./types";
 
 export type ListenMode = "idle" | "recording" | "thinking" | "speaking";
@@ -69,7 +70,7 @@ export const useAether = create<AetherState>()(
   persist(
     (set) => ({
       settings: {
-        voice: "eve",
+        voice: "warm-f",
         language: "en",
         wakeEnabled: false,
         onboarded: false,
@@ -77,7 +78,7 @@ export const useAether = create<AetherState>()(
       },
       device: {
         flashlight: false,
-        volume: 11,
+        volume: 12,
         brightness: 70,
         cameraOpen: false,
       },
@@ -93,7 +94,7 @@ export const useAether = create<AetherState>()(
       setDrawerOpen: (drawerOpen) => set({ drawerOpen }),
       setListen: (listen) => set({ listen }),
       setVoice: (voice) =>
-        set((s) => ({ settings: { ...s.settings, voice } })),
+        set((s) => ({ settings: { ...s.settings, voice: resolveVoiceId(voice) } })),
       setLanguage: (language) =>
         set((s) => ({ settings: { ...s.settings, language } })),
       setTheme: (theme) =>
@@ -168,7 +169,10 @@ export const useAether = create<AetherState>()(
         return localStorage;
       }),
       partialize: (s) => ({
-        settings: s.settings,
+        settings: {
+          ...s.settings,
+          voice: resolveVoiceId(s.settings.voice),
+        },
         device: {
           flashlight: false,
           volume: s.device.volume,
