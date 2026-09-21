@@ -3,7 +3,7 @@ import { askAether, hearAether, toChatPayload } from "./ai";
 import { getNativeAccessCode, runPhoneActions } from "./native";
 import { createVad } from "./silence";
 import { useAether } from "./store";
-import type { PhoneAction } from "./types";
+import { resolveVoiceId, type PhoneAction } from "./types";
 import {
   blobToBase64,
   pickRecorderMime,
@@ -307,7 +307,6 @@ async function runTurn(text: string, id: number) {
     });
     if (id !== runId) return;
 
-    // Prefer what the phone actually reported — never leave a false "Flashlight on" standing alone
     const okMsgs = results.filter((r) => r.ok).map((r) => r.message);
     const failMsgs = results.filter((r) => !r.ok).map((r) => r.message);
     if (okMsgs.length && !failMsgs.length) {
@@ -345,15 +344,16 @@ export async function greetOnce() {
   await speak(line, ++runId);
 }
 
-/** Always use the phone's built-in text-to-speech (free, offline, no server voice). */
+/** Phone built-in text-to-speech with the user's chosen voice profile. */
 export async function speak(text: string, id: number = ++runId) {
   const s = store();
   s.setListen("speaking");
   step("Speaking");
-  const vol = Math.max(0.2, s.device.volume / 15);
+  const vol = Math.max(0.25, s.device.volume / 15);
+  const voice = resolveVoiceId(s.settings.voice);
   try {
     if (id !== runId) return;
-    await speakWithDevice(text, s.settings.language, vol);
+    await speakWithDevice(text, s.settings.language, vol, voice);
   } catch {
     /* text is already on screen */
   } finally {
