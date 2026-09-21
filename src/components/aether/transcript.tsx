@@ -1,6 +1,13 @@
+import { useEffect, useRef, useState } from "react";
 import { useAether } from "@/lib/aether/store";
-import { cn, formatClock } from "@/lib/utils";
-import { useEffect, useRef } from "react";
+import { cn } from "@/lib/utils";
+
+function timeGreeting(): string {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
+}
 
 export function Transcript() {
   const messages = useAether((s) => s.messages);
@@ -8,74 +15,75 @@ export function Transcript() {
   const steps = useAether((s) => s.steps);
   const listen = useAether((s) => s.listen);
   const bottom = useRef<HTMLDivElement>(null);
+  const [greeting] = useState(timeGreeting);
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages.length, error, steps.length]);
+  }, [messages.length, error, steps.length, listen]);
 
   if (!messages.length && !error && !steps.length) {
     return (
-      <div className="flex flex-1 flex-col justify-end px-1 py-6">
-        <p className="max-w-[18ch] font-display text-3xl font-medium leading-tight tracking-[-0.03em] text-fg">
-          Tap the disc. Talk like you would to a person.
+      <div className="flex flex-1 flex-col items-center justify-center px-6 py-12 animate-[eta-fade-in_0.5s_ease-out]">
+        <p className="font-display text-2xl font-medium tracking-tight text-fg sm:text-3xl">
+          {greeting}
         </p>
-        <p className="mt-3 max-w-sm text-sm leading-relaxed text-muted">
-          Try “turn on the flashlight”, “text mama I’ll be late”, or “set a timer
-          for five minutes”.
+        <p className="mt-2 max-w-[16rem] text-center text-sm leading-relaxed text-muted">
+          I'm Eta, your personal mobile assistant. Tap the mic or type below.
         </p>
+        <ul className="mt-8 w-full max-w-sm space-y-2">
+          {[
+            "Turn on the flashlight",
+            "Set a timer for five minutes",
+            "What can you do?",
+          ].map((hint) => (
+            <li
+              key={hint}
+              className="rounded-2xl border border-border/80 bg-elevated/60 px-4 py-3 text-center text-sm text-muted"
+            >
+              {hint}
+            </li>
+          ))}
+        </ul>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-1 py-2">
+    <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-4">
       {messages.map((m) => (
         <article
           key={m.id}
           className={cn(
-            "max-w-[92%] rounded-[20px] px-4 py-3 text-sm leading-relaxed",
+            "max-w-[85%] text-[15px] leading-relaxed",
             m.role === "user"
-              ? "ml-auto rounded-br-sm bg-subtle text-fg"
-              : "mr-auto rounded-bl-sm bg-elevated text-fg shadow-[var(--shadow-border)]",
+              ? "ml-auto rounded-2xl rounded-br-md bg-subtle px-4 py-2.5 text-fg"
+              : "mr-auto text-fg",
           )}
         >
-          <p>{m.text}</p>
-          {m.role === "assistant" && m.trace && m.trace.length > 1 ? (
-            <details className="mt-2 text-xs text-muted">
-              <summary className="cursor-pointer select-none">How I got this</summary>
-              <ol className="mt-1.5 list-decimal space-y-0.5 pl-4">
-                {m.trace.map((t, i) => (
-                  <li key={i}>{t}</li>
-                ))}
-              </ol>
-            </details>
-          ) : null}
-          <time className="mt-1.5 block text-[11px] text-faint tabular-nums">
-            {formatClock(new Date(m.at))}
-          </time>
+          {m.role === "assistant" ? (
+            <p className="whitespace-pre-wrap">{m.text}</p>
+          ) : (
+            <p>{m.text}</p>
+          )}
         </article>
       ))}
+
       {listen !== "idle" && steps.length ? (
-        <div className="mr-auto max-w-[92%] rounded-[20px] rounded-bl-sm bg-subtle px-4 py-3 text-xs text-muted">
-          <ol className="space-y-1">
-            {steps.map((t, i) => {
-              const active = i === steps.length - 1;
-              return (
-                <li key={i} className={cn("flex gap-2", active ? "text-fg" : "text-faint")}>
-                  <span aria-hidden>{active ? "•" : "✓"}</span>
-                  <span>{t}</span>
-                </li>
-              );
-            })}
-          </ol>
+        <div className="mr-auto max-w-[85%] text-xs text-muted">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="size-1.5 animate-pulse rounded-full bg-muted" />
+            {steps[steps.length - 1]}
+          </span>
         </div>
       ) : null}
+
       {error ? (
-        <p className="rounded-[16px] bg-danger/10 px-4 py-3 text-sm text-danger">
+        <p className="rounded-2xl bg-danger/10 px-4 py-3 text-sm text-danger">
           {error}
         </p>
       ) : null}
-      <div ref={bottom} />
+
+      <div ref={bottom} className="h-1 shrink-0" />
     </div>
   );
 }
