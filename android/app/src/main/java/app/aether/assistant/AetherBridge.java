@@ -13,10 +13,14 @@ import android.location.LocationManager;
 import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.provider.AlarmClock;
 import android.provider.Settings;
+import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
 import android.view.WindowManager;
 import androidx.core.content.ContextCompat;
 import org.json.JSONObject;
@@ -24,6 +28,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -35,8 +42,12 @@ public class AetherBridge {
     private static final Pattern CLOCK = Pattern.compile("^(\\d{1,2}):(\\d{2})$");
     private static final int MAX_TIMER_SECONDS = 24 * 60 * 60;
     private static final int MAX_SMS_CHARS = 500;
+    private static final int MAX_SPEAK_CHARS = 1200;
 
     private final MainActivity activity;
+    private TextToSpeech tts;
+    private volatile boolean ttsReady = false;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     private static final Map<String, String> APPS = new HashMap<>();
     static {
@@ -71,6 +82,149 @@ public class AetherBridge {
 
     public AetherBridge(MainActivity activity) {
         this.activity = activity;
+        initTts();
+    }
+
+    private void initTts() {
+        mainHandler.post(() -> {
+            try {
+                tts = new TextToSpeech(activity.getApplicationContext(), status -> {
+                    ttsReady = status == TextToSpeech.SUCCESS;
+                    if (ttsReady && tts != null) {
+                        try {
+                            tts.setLanguage(Locale.US);
+                        } catch (Exception ignored) {
+                        }
+                    }
+                });
+            } catch (Exception e) {
+                ttsReady = false;
+            }
+        });
+    }
+
+    /** Speak with the phone's real TTS engine (not WebView speechSynthesis). */
+    public JSONObject speak(JSONObject obj) {
+        String text = clip(obj.optString("text", ""), MAX_SPEAK_CHARS).trim();
+        if (text.isEmpty()) return result(false, "Nothing to say.");
+
+        float rate = (float) obj.optDouble("rate", 1.0);
+        float pitch = (float) obj.optDouble("pitch", 1.0);
+        String lang = obj.optString("language", "en");
+        rate = Math.max(0.5f, Math.min(2.0f, rate));
+        pitch = Math.max(0.5f, Math.min(2.0f, pitch));
+
+        // Wait briefly if TTS is still initializing
+        if (!ttsReady || tts == null) {
+            CountDownLatch latch = new CountDownLatch(1);
+            mainHandler.post(() -> {
+                if (tts == null) initTts();
+                latch.countDown();
+            });
+            try {
+                latch.await(400, TimeUnit.MILLISECONDS);
+            } catch (InterruptedException ignored) {
+            }
+            // Give engine a moment after create
+            try {
+                Thread.sleep(300);
+            } catch (InterruptedException ignored) {
+            }
+        }
+
+        if (tts == null || !ttsReady) {
+            return result(false, "Text-to-speech is not ready on this phone.");
+        }
+
+        final float fRate = rate;
+        final float fPitch = pitch;
+        final String fLang = lang;
+        final String fText = text;
+        final CountDownLatch done = new CountDownLatch(1);
+        final boolean[] ok = { false };
+
+        mainHandler.post(() -> {
+            try {
+                Locale locale = localeFor(fLang);
+                int langResult = tts.setLanguage(locale);
+                if (langResult == TextToSpeech.LANG_MISSING_DATA
+                        || langResult == TextToSpeech.LANG_NOT_SUPPORTED) {
+                    tts.setLanguage(Locale.US);
+                }
+                tts.setSpeechRate(fRate);
+                tts.setPitch(fPitch);
+                String id = UUID.randomUUID().toString();
+                tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                    @Override public void onStart(String utteranceId) { ok[0] = true; }
+                    @Override public void onDone(String utteranceId) { done.countDown(); }
+                    @Override public void onError(String utteranceId) { done.countDown(); }
+                });
+                int speakResult;
+                if (Build.VERSION.SDK_INT >= 21) {
+                    Bundle params = new Bundle();
+                    params.putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, id);
+                    speakResult = tts.speak(fText, TextToSpeech.QUEUE_FLUSH, params, id);
+                } else {
+                    HashMap<String, String> params = new HashMap<>();
+                    params.put(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, id);
+                    speakResult = tts.speak(fText, TextToSpeech.QUEUE_FLUSH, params);
+                }
+                if (speakResult == TextToSpeech.SUCCESS) {
+                    ok[0] = true;
+                    // Don't block the bridge for the full utterance — fire and return
+                    done.countDown();
+                } else {
+                    done.countDown();
+                }
+            } catch (Exception e) {
+                done.countDown();
+            }
+        });
+
+        try {
+            done.await(2, TimeUnit.SECONDS);
+        } catch (InterruptedException ignored) {
+        }
+
+        if (ok[0]) return result(true, "Speaking.");
+        return result(false, "Could not start speech.");
+    }
+
+    public void stopSpeaking() {
+        mainHandler.post(() -> {
+            try {
+                if (tts != null) tts.stop();
+            } catch (Exception ignored) {
+            }
+        });
+    }
+
+    public void shutdown() {
+        mainHandler.post(() -> {
+            try {
+                if (tts != null) {
+                    tts.stop();
+                    tts.shutdown();
+                    tts = null;
+                    ttsReady = false;
+                }
+            } catch (Exception ignored) {
+            }
+        });
+    }
+
+    private static Locale localeFor(String language) {
+        if (language == null) return Locale.US;
+        switch (language.toLowerCase(Locale.US)) {
+            case "fr": return Locale.FRENCH;
+            case "hi": return new Locale("hi", "IN");
+            case "ar": return new Locale("ar");
+            case "sw": return new Locale("sw");
+            case "es": return new Locale("es", "ES");
+            case "pt": return new Locale("pt", "BR");
+            case "en":
+            default: return Locale.US;
+        }
     }
 
     public JSONObject execute(JSONObject obj) {
@@ -147,7 +301,7 @@ public class AetherBridge {
             }
             if (id == null) return result(false, "This phone has no flashlight.");
             cm.setTorchMode(id, on);
-            vibrate(30);
+            vibrate(on ? 40 : 25);
             return result(true, on ? "Flashlight on." : "Flashlight off.");
         } catch (CameraAccessException | IllegalArgumentException e) {
             return result(false, "Torch is not available.");
@@ -185,7 +339,6 @@ public class AetherBridge {
             i.setData(Uri.parse("package:" + activity.getPackageName()));
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             activity.startActivity(i);
-            // Window brightness was still applied for this activity; system-wide needs permission.
             return result(true,
                     "Screen dimmed here. Allow modify system settings, then ask again for system-wide brightness.");
         } catch (Exception e) {
@@ -212,7 +365,6 @@ public class AetherBridge {
         return result(true, "Message drafted for " + n + ". Tap send.");
     }
 
-    /** Open any launcher app by label, alias, or package. Honest failures. */
     private JSONObject openApp(String name) {
         String key = name.toLowerCase(Locale.US).trim();
         if (key.isEmpty()) return result(false, "Which app should I open?");
@@ -228,7 +380,6 @@ public class AetherBridge {
             }
         }
 
-        // Match launcher apps by label (visible under the MAIN/LAUNCHER query)
         if (pkg == null) {
             Intent main = new Intent(Intent.ACTION_MAIN, null);
             main.addCategory(Intent.CATEGORY_LAUNCHER);
@@ -263,7 +414,6 @@ public class AetherBridge {
             }
         }
 
-        // Real fallback: open Play Store search (user sees it)
         Intent market = new Intent(Intent.ACTION_VIEW,
                 Uri.parse("market://search?q=" + Uri.encode(name) + "&c=apps"));
         market.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -346,7 +496,6 @@ public class AetherBridge {
         }
     }
 
-    /** Real coordinates only. No pretend success. */
     private JSONObject location() {
         boolean fine = ContextCompat.checkSelfPermission(activity, Manifest.permission.ACCESS_FINE_LOCATION)
                 == PackageManager.PERMISSION_GRANTED;
