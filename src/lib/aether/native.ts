@@ -71,8 +71,14 @@ function postNative(body: Record<string, unknown>): Promise<NativeReply | null> 
   });
 }
 
+/** Send the PhoneAction fields at the top level so the APK can execute them. */
 function nativeExecute(action: PhoneAction): Promise<ActionResult | null> {
-  return postNative({ action });
+  return postNative({
+    action: action.action,
+    value: action.value,
+    target: action.target,
+    extra: action.extra,
+  });
 }
 
 let nativeCode: string | null = null;
@@ -127,7 +133,6 @@ async function setTorch(on: boolean): Promise<boolean> {
   }
 }
 
-/** Common apps + aliases. Unknown names still try package launch / Play Store / web. */
 const APP_ALIASES: Record<string, { intent?: string; web?: string; pkg?: string }> = {
   whatsapp: { web: "https://wa.me/", pkg: "com.whatsapp" },
   "whatsapp business": { pkg: "com.whatsapp.w4b" },
@@ -172,7 +177,6 @@ const APP_ALIASES: Record<string, { intent?: string; web?: string; pkg?: string 
   weather: { pkg: "com.google.android.apps.weather" },
   uber: { pkg: "com.ubercab" },
   bolt: { pkg: "com.bolt.client" },
-  bank: { pkg: "com.google.android.apps.nbu.paisa.user" },
 };
 
 type Prepared = { action: PhoneAction } | { error: string };
@@ -209,15 +213,19 @@ export async function runPhoneAction(action: PhoneAction): Promise<ActionResult>
 
   if (action.action === "note" || action.action === "reminder") {
     result = runLocalAction(action);
-  } else if (action.action === "location") {
-    result = (await nativeExecute(action)) ?? (await getBrowserLocation());
   } else {
     const prepared = prepare(action);
     if ("error" in prepared) {
       result = { ok: false, native: false, message: prepared.error };
     } else {
       applied = prepared.action;
-      result = (await nativeExecute(applied)) ?? (await runWebAction(applied));
+      const native = await nativeExecute(applied);
+      if (native) {
+        // Inside the APK: trust the native result only (no faux web success).
+        result = native;
+      } else {
+        result = await runWebAction(applied);
+      }
     }
   }
 
@@ -283,14 +291,18 @@ function applyLocal(action: PhoneAction) {
 
 async function getBrowserLocation(): Promise<ActionResult> {
   if (!navigator.geolocation) {
-    return { ok: false, native: false, message: "Location is not available on this device." };
+    return {
+      ok: false,
+      native: false,
+      message: "Location is not available in this browser. Use the Eta app on your phone.",
+    };
   }
   try {
     const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(resolve, reject, {
         enableHighAccuracy: true,
-        timeout: 12_000,
-        maximumAge: 60_000,
+        timeout: 15_000,
+        maximumAge: 30_000,
       });
     });
     const { latitude, longitude } = pos.coords;
@@ -298,13 +310,27 @@ async function getBrowserLocation(): Promise<ActionResult> {
     return {
       ok: true,
       native: false,
-      message: `You're around ${latitude.toFixed(4)}, ${longitude.toFixed(4)}. Opening maps.`,
+      message: `You're around ${latitude.toFixed(5)}, ${longitude.toFixed(5)}. Opening maps.`,
     };
-  } catch {
+  } catch (err) {
+    const code = err && typeof err === "object" && "code" in err ? Number((err as GeolocationPositionError).code) : 0;
+    if (code === 1) {
+      return {
+        ok: false,
+        native: false,
+        message: "Location permission denied. Allow it in the browser, then try again.",
+      };
+    }
+    if (code === 2) {
+      return { ok: false, native: false, message: "Location is unavailable right now." };
+    }
+    if (code === 3) {
+      return { ok: false, native: false, message: "Location timed out. Try again outdoors." };
+    }
     return {
       ok: false,
       native: false,
-      message: "Couldn't get location. Allow location permission and try again.",
+      message: "Couldn't get location. Allow permission and try again.",
     };
   }
 }
@@ -314,29 +340,41 @@ function launchAnyApp(name: string): ActionResult {
   if (!key) return { ok: false, native: false, message: "Which app should I open?" };
 
   const hit =
-    APP_ALIASES[key] ?? Object.entries(APP_ALIASES).find(([n]) => key.includes(n) || n.includes(key))?.[1];
+    APP_ALIASES[key] ??
+    Object.entries(APP_ALIASES).find(([n]) => key.includes(n) || n.includes(key))?.[1];
 
-  if (hit?.web) openUrl(hit.web);
-  else if (hit?.intent) openUrl(intentUrl(hit.intent));
-  else if (hit?.pkg) openUrl(`intent://#Intent;package=${hit.pkg};end`);
-  else {
-    // Unknown app: try Play Store search, then generic web search as last resort
-    openUrl(`https://play.google.com/store/search?q=${encodeURIComponent(name)}&c=apps`);
+  if (hit?.web) {
+    openUrl(hit.web);
+    return { ok: true, native: false, message: `Opening ${name}.` };
   }
-  return { ok: true, native: false, message: `Opening ${name}.` };
+  if (hit?.intent) {
+    openUrl(intentUrl(hit.intent));
+    return { ok: true, native: false, message: `Opening ${name}.` };
+  }
+  if (hit?.pkg) {
+    openUrl(`intent://#Intent;package=${hit.pkg};end`);
+    return { ok: true, native: false, message: `Opening ${name}.` };
+  }
+  openUrl(`https://play.google.com/store/search?q=${encodeURIComponent(name)}&c=apps`);
+  return {
+    ok: true,
+    native: false,
+    message: `Couldn't open ${name} here. Opened Play Store search.`,
+  };
 }
 
 async function runWebAction(action: PhoneAction): Promise<ActionResult> {
   switch (action.action) {
     case "flashlight_on": {
       const ok = await setTorch(true);
-      return {
-        ok: true,
-        native: false,
-        message: ok
-          ? "Flashlight on."
-          : "Flashlight overlay on. On the phone APK this uses the real torch.",
-      };
+      if (!ok) {
+        return {
+          ok: false,
+          native: false,
+          message: "Can't control the flashlight in the browser. Use the Eta app on your phone.",
+        };
+      }
+      return { ok: true, native: false, message: "Flashlight on." };
     }
     case "flashlight_off": {
       await setTorch(false);
@@ -344,15 +382,15 @@ async function runWebAction(action: PhoneAction): Promise<ActionResult> {
     }
     case "volume":
       return {
-        ok: true,
+        ok: false,
         native: false,
-        message: `Volume set to ${action.value ?? 11} of 15.`,
+        message: "I can only change real volume from the Eta app on your phone.",
       };
     case "brightness":
       return {
-        ok: true,
+        ok: false,
         native: false,
-        message: `Brightness ${action.value ?? 70}%.`,
+        message: "I can only change real brightness from the Eta app on your phone.",
       };
     case "call": {
       const n = String(action.target ?? "").replace(/[^\d+]/g, "");
@@ -378,18 +416,26 @@ async function runWebAction(action: PhoneAction): Promise<ActionResult> {
       return {
         ok: true,
         native: false,
-        message: `Alarm set for ${hour}:${String(minute).padStart(2, "0")}.`,
+        message: `Trying to set alarm for ${hour}:${String(minute).padStart(2, "0")}. Best from the Eta app.`,
       };
     }
     case "timer": {
-      const seconds = parseTimerSeconds(action.value) ?? 60;
-      return { ok: true, native: false, message: `Timer running for ${seconds} seconds.` };
+      const seconds = parseTimerSeconds(action.value);
+      if (seconds === null) {
+        return { ok: false, native: false, message: "How long should the timer run?" };
+      }
+      // In-browser we only track it in Eta; phone system timer needs the APK.
+      return {
+        ok: true,
+        native: false,
+        message: `Timer set for ${seconds} seconds in Eta. On the phone app this also starts the system timer.`,
+      };
     }
     case "open_app":
       return launchAnyApp(String(action.target ?? action.extra ?? ""));
     case "camera": {
       openUrl(intentUrl("android.media.action.STILL_IMAGE_CAMERA"));
-      return { ok: true, native: false, message: "Camera ready." };
+      return { ok: true, native: false, message: "Opening camera." };
     }
     case "lock":
     case "home":
@@ -411,11 +457,13 @@ async function runWebAction(action: PhoneAction): Promise<ActionResult> {
       openUrl(`https://maps.google.com/?q=${q}`);
       return { ok: true, native: false, message: `Navigating to ${action.target}.` };
     }
+    case "location":
+      return getBrowserLocation();
     case "search_web": {
       const q = encodeURIComponent(String(action.target ?? action.extra ?? action.value ?? ""));
       if (!q) return { ok: false, native: false, message: "What should I search for?" };
       openUrl(`https://www.google.com/search?q=${q}`);
-      return { ok: true, native: false, message: `Searching the web for that.` };
+      return { ok: true, native: false, message: "Searching the web for that." };
     }
     case "open_url": {
       let url = String(action.target ?? action.extra ?? action.value ?? "").trim();
