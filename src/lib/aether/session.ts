@@ -31,7 +31,14 @@ let playingUrl: string | null = null;
 let serverVoice = true;
 
 const OFFLINE = "Couldn't reach Eta. Check your connection.";
-const DIDNT_HEAR = "I didn't hear anything. Tap the disc and try again.";
+const DIDNT_HEAR = "I didn't hear anything. Tap the mic and try again.";
+
+function timeGreeting(): string {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
+}
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -117,7 +124,6 @@ function stopRecorder(): Promise<Blob | null> {
 
 /** Watch the mic level; send automatically once the user stops talking. */
 function watchForSilence(id: number, ctx: AudioContext | null) {
-  // Safety net: whatever happens, a recording never runs past 22 seconds.
   hardTimer = window.setTimeout(() => void finishListening(id), 22_000);
   if (!ctx || !stream) return;
 
@@ -133,8 +139,6 @@ function watchForSilence(id: number, ctx: AudioContext | null) {
       stopVad();
       return;
     }
-    // Some WebViews start the audio engine suspended; then there is nothing to measure,
-    // and the tap-to-send button and the safety net still work.
     if (ctx.state !== "running") {
       void ctx.resume().catch(() => undefined);
       return;
@@ -164,7 +168,7 @@ function watchForSilence(id: number, ctx: AudioContext | null) {
 function micErrorMessage(err: unknown): string {
   const name = err instanceof Error ? err.name : "";
   if (name === "NotAllowedError" || name === "SecurityError") {
-    return "Microphone is blocked. Allow it in Settings, Apps, Aether, Permissions.";
+    return "Microphone is blocked. Allow it in Settings → Apps → Eta → Permissions.";
   }
   if (name === "NotFoundError") return "No microphone found on this phone.";
   if (name === "NotReadableError") return "Another app is using the microphone. Close it and try again.";
@@ -175,7 +179,7 @@ function micErrorMessage(err: unknown): string {
 // Public controls
 // ---------------------------------------------------------------------------
 
-/** Tap on the disc: start listening, or (while listening) send now, or (while busy) stop. */
+/** Tap mic: start listening, or (while listening) send now, or (while busy) stop. */
 export async function tapOrb() {
   const { listen } = store();
   if (listen === "idle") return startListening();
@@ -183,9 +187,9 @@ export async function tapOrb() {
   stopEverything();
 }
 
-/** The Stop button: cancels listening, thinking, pending actions and speech, all at once. */
+/** Stop: cancels listening, thinking, pending actions and speech. */
 export function stopEverything() {
-  runId += 1; // anything still running now sees it is stale and drops its result
+  runId += 1;
   teardownRecorder();
   stopAudio();
   stopDeviceVoice();
@@ -194,7 +198,6 @@ export function stopEverything() {
   s.setListen("idle");
 }
 
-/** Kept for callers that only want to drop a recording (e.g. when the screen closes). */
 export const cancelRecording = stopEverything;
 
 export async function startListening() {
@@ -203,10 +206,9 @@ export async function startListening() {
   const s = store();
   s.setError(null);
   s.setSteps([]);
-  s.setListen("recording"); // show "Listening" straight away; tap now means "cancel" not "start again"
+  s.setListen("recording");
   step("Opening the microphone");
 
-  // Create the audio engine inside the tap itself, while the browser still allows sound.
   let ctx: AudioContext | null = null;
   try {
     const Ctx =
@@ -225,7 +227,6 @@ export async function startListening() {
       audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
     });
     if (id !== runId || store().listen !== "recording") {
-      // Stopped while the permission prompt was open.
       media.getTracks().forEach((t) => t.stop());
       void ctx?.close().catch(() => undefined);
       return;
@@ -239,7 +240,7 @@ export async function startListening() {
       if (e.data.size) chunks.push(e.data);
     };
     recorder.start(250);
-    step("Listening. Tap the disc when you're done");
+    step("Listening… tap the mic when you're done");
     watchForSilence(id, ctx);
   } catch (err) {
     void ctx?.close().catch(() => undefined);
@@ -249,10 +250,9 @@ export async function startListening() {
   }
 }
 
-/** Stop recording and carry the audio through to a spoken reply. */
 export async function finishListening(id: number) {
   if (id !== runId || store().listen !== "recording") return;
-  store().setListen("thinking"); // set first so a second call (tap + silence at once) is ignored
+  store().setListen("thinking");
   stopVad();
   try {
     const blob = await stopRecorder();
@@ -286,17 +286,12 @@ export async function finishListening(id: number) {
   }
 }
 
-/** Typed messages from the text box. */
 export async function sendText(text: string) {
   if (store().listen !== "idle") return;
   const id = ++runId;
   store().setSteps([]);
   await runTurn(text, id);
 }
-
-// ---------------------------------------------------------------------------
-// One turn: think -> act -> speak
-// ---------------------------------------------------------------------------
 
 async function runTurn(text: string, id: number) {
   const trimmed = text.trim();
@@ -351,20 +346,21 @@ async function runTurn(text: string, id: number) {
     trace: store().steps.slice(-8),
   });
 
-  // Always speak the reply out loud while the text is shown.
   await speak(spoken, id);
 }
 
-const GREETING =
-  "Hello, I am Eta, your personal mobile assistant. Tap the disc and talk to me.";
+function buildGreeting(): string {
+  return `${timeGreeting()}. I'm Eta, your personal mobile assistant. How can I help?`;
+}
 
-/** First launch inside the app: say hello once, then get out of the way. */
+/** First launch: time-aware hello, spoken once. */
 export async function greetOnce() {
   const s = store();
   if (s.settings.onboarded || s.listen !== "idle") return;
   s.setOnboarded();
-  s.addMessage({ id: crypto.randomUUID(), role: "assistant", text: GREETING, at: Date.now() });
-  await speak(GREETING, ++runId);
+  const line = buildGreeting();
+  s.addMessage({ id: crypto.randomUUID(), role: "assistant", text: line, at: Date.now() });
+  await speak(line, ++runId);
 }
 
 export async function speak(text: string, id: number = ++runId) {
@@ -373,7 +369,6 @@ export async function speak(text: string, id: number = ++runId) {
   step("Speaking");
   const vol = Math.max(0.2, s.device.volume / 15);
   try {
-    // Prefer server TTS (xAI) when available — higher quality, plays as real audio.
     if (serverVoice) {
       const voice = await speakAether({
         data: {
@@ -383,21 +378,18 @@ export async function speak(text: string, id: number = ++runId) {
           language: s.settings.language,
         },
       });
-      if (id !== runId) return; // stopped while the voice was being made
+      if (id !== runId) return;
       if (voice.ok) {
         if (playingUrl) URL.revokeObjectURL(playingUrl);
         playingUrl = base64ToAudioUrl(voice.audioBase64, voice.mimeType);
         await playAudioUrl(playingUrl, vol);
         return;
       }
-      // Provider has no TTS (e.g. Groq) — fall through to device voice and remember.
       if ("device" in voice && voice.device) serverVoice = false;
     }
-    // Fallback: phone/browser built-in speechSynthesis (always try so text is spoken).
     if (id !== runId) return;
     await speakWithDevice(text, s.settings.language, vol);
   } catch {
-    /* autoplay or network — text is already on screen; still try device voice once */
     try {
       if (id === runId) await speakWithDevice(text, s.settings.language, vol);
     } catch {
