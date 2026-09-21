@@ -71,14 +71,16 @@ function postNative(body: Record<string, unknown>): Promise<NativeReply | null> 
   });
 }
 
-/** Send the PhoneAction fields at the top level so the APK can execute them. */
+/**
+ * APK expects: { id, action: { action, value?, target?, extra? } }
+ * Nested object is required — a bare string action causes "Bad request".
+ */
 function nativeExecute(action: PhoneAction): Promise<ActionResult | null> {
-  return postNative({
-    action: action.action,
-    value: action.value,
-    target: action.target,
-    extra: action.extra,
-  });
+  const payload: Record<string, unknown> = { action: action.action };
+  if (action.value !== undefined && action.value !== null) payload.value = String(action.value);
+  if (action.target !== undefined && action.target !== null) payload.target = String(action.target);
+  if (action.extra !== undefined && action.extra !== null) payload.extra = String(action.extra);
+  return postNative({ action: payload });
 }
 
 let nativeCode: string | null = null;
@@ -221,7 +223,6 @@ export async function runPhoneAction(action: PhoneAction): Promise<ActionResult>
       applied = prepared.action;
       const native = await nativeExecute(applied);
       if (native) {
-        // Inside the APK: trust the native result only (no faux web success).
         result = native;
       } else {
         result = await runWebAction(applied);
@@ -229,6 +230,7 @@ export async function runPhoneAction(action: PhoneAction): Promise<ActionResult>
     }
   }
 
+  // Only mirror local UI state when the action truly succeeded
   if (result.ok) applyLocal(applied);
   store.setLastAction(result.message);
   return result;
@@ -313,7 +315,10 @@ async function getBrowserLocation(): Promise<ActionResult> {
       message: `You're around ${latitude.toFixed(5)}, ${longitude.toFixed(5)}. Opening maps.`,
     };
   } catch (err) {
-    const code = err && typeof err === "object" && "code" in err ? Number((err as GeolocationPositionError).code) : 0;
+    const code =
+      err && typeof err === "object" && "code" in err
+        ? Number((err as GeolocationPositionError).code)
+        : 0;
     if (code === 1) {
       return {
         ok: false,
@@ -424,7 +429,6 @@ async function runWebAction(action: PhoneAction): Promise<ActionResult> {
       if (seconds === null) {
         return { ok: false, native: false, message: "How long should the timer run?" };
       }
-      // In-browser we only track it in Eta; phone system timer needs the APK.
       return {
         ok: true,
         native: false,
