@@ -39,7 +39,7 @@ export function resolveProvider(env: Env): Provider {
       name: "groq",
       key: clean(env.GROQ_API_KEY) ?? shared,
       chatUrl: `${base}/chat/completions`,
-      chatModel: llmModel ?? "llama-3.3-70b-versatile",
+      chatModel: llmModel ?? "openai/gpt-oss-120b",
       sttUrl: `${base}/audio/transcriptions`,
       sttModel: sttModel ?? "whisper-large-v3-turbo",
       ttsUrl: null,
