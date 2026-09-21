@@ -10,6 +10,20 @@ if (keystorePropsFile.exists()) {
     keystorePropsFile.withInputStream { keystoreProps.load(it) }
 }
 
+// Optional build-time settings that make the app connect by itself (no setup screen, no
+// code to type). They are compiled into the APK, so keep the APK private.
+//   AETHER_SITE_URL      e.g. https://your-project.vercel.app
+//   AETHER_ACCESS_CODE   the same value as AETHER_ACCESS_CODE on the server
+def bakedSetting = { String envName, String propName ->
+    def value = (System.getenv(envName) ?: project.findProperty(propName) ?: "").toString().trim()
+    if (!(value ==~ /[A-Za-z0-9+\/=_.:\-]*/)) {
+        throw new GradleException("$envName may only contain letters, numbers and + / = _ . : -")
+    }
+    return value
+}
+def siteUrl = bakedSetting("AETHER_SITE_URL", "aetherSiteUrl")
+def accessCode = bakedSetting("AETHER_ACCESS_CODE", "aetherAccessCode")
+
 android {
     namespace "app.aether.assistant"
     compileSdk 34
@@ -18,8 +32,14 @@ android {
         applicationId "app.aether.assistant"
         minSdk 26
         targetSdk 34
-        versionCode 2
-        versionName "1.1"
+        versionCode 3
+        versionName "1.2"
+        buildConfigField "String", "SITE_URL", "\"${siteUrl}\""
+        buildConfigField "String", "ACCESS_CODE", "\"${accessCode}\""
+    }
+
+    buildFeatures {
+        buildConfig true
     }
 
     signingConfigs {

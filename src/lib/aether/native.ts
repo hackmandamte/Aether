@@ -26,7 +26,8 @@ declare global {
 let torchStream: MediaStream | null = null;
 
 const NATIVE_TIMEOUT_MS = 8000;
-const pendingNative = new Map<string, (result: ActionResult) => void>();
+type NativeReply = ActionResult & { accessCode?: string };
+const pendingNative = new Map<string, (result: NativeReply) => void>();
 let nativeListening = false;
 
 export function isNativeBridge(): boolean {
@@ -38,7 +39,7 @@ function listenForNative(channel: NativeChannel) {
   nativeListening = true;
   channel.addEventListener("message", (event) => {
     try {
-      const msg = JSON.parse(String(event.data)) as { id?: string; result?: ActionResult };
+      const msg = JSON.parse(String(event.data)) as { id?: string; result?: NativeReply };
       const done = msg.id ? pendingNative.get(msg.id) : undefined;
       if (done && msg.result) {
         pendingNative.delete(msg.id!);
@@ -51,7 +52,7 @@ function listenForNative(channel: NativeChannel) {
 }
 
 /** null = not running inside the app (use the browser fallback). */
-function nativeExecute(action: PhoneAction): Promise<ActionResult | null> {
+function postNative(body: Record<string, unknown>): Promise<NativeReply | null> {
   const channel = typeof window !== "undefined" ? window.AetherNative : undefined;
   if (!channel || typeof channel.postMessage !== "function") return Promise.resolve(null);
   listenForNative(channel);
@@ -67,13 +68,31 @@ function nativeExecute(action: PhoneAction): Promise<ActionResult | null> {
       resolve({ ...result, native: true });
     });
     try {
-      channel.postMessage(JSON.stringify({ id, action }));
+      channel.postMessage(JSON.stringify({ id, ...body }));
     } catch {
       window.clearTimeout(timer);
       pendingNative.delete(id);
       resolve({ ok: false, native: true, message: "Native bridge failed." });
     }
   });
+}
+
+function nativeExecute(action: PhoneAction): Promise<ActionResult | null> {
+  return postNative({ action });
+}
+
+let nativeCode: string | null = null;
+
+/**
+ * The access code built into the Android app (empty in a normal browser, or when the
+ * app wasn't built with one). Only this site's top frame can ask; the app checks that.
+ */
+export async function getNativeAccessCode(): Promise<string> {
+  if (!isNativeBridge()) return "";
+  if (nativeCode !== null) return nativeCode;
+  const reply = await postNative({ type: "config" });
+  if (reply?.ok && typeof reply.accessCode === "string") nativeCode = reply.accessCode;
+  return nativeCode ?? "";
 }
 
 function openUrl(url: string) {

@@ -16,6 +16,8 @@ test("groq preset: free models, no server TTS", () => {
   assert.equal(p.key, "g1");
   assert.equal(p.chatUrl, "https://api.groq.com/openai/v1/chat/completions");
   assert.equal(p.sttUrl, "https://api.groq.com/openai/v1/audio/transcriptions");
+  assert.equal(p.chatModel, "openai/gpt-oss-120b");
+  assert.equal(p.sttModel, "whisper-large-v3-turbo");
   assert.equal(p.ttsUrl, null);
 });
 

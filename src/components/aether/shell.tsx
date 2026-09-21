@@ -12,7 +12,13 @@ import { InstallPanel } from "./install-panel";
 import { NotesPanel } from "./notes-panel";
 import { Orb } from "./orb";
 import { Transcript } from "./transcript";
-import { cancelRecording, finishRecordingAndReply, startRecording } from "@/lib/aether/session";
+import { isNativeBridge } from "@/lib/aether/native";
+import {
+  cancelRecording,
+  finishRecordingAndReply,
+  greetOnce,
+  startRecording,
+} from "@/lib/aether/session";
 import { useAether } from "@/lib/aether/store";
 import { formatClock } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -35,14 +41,21 @@ export function AetherShell() {
   const holding = useRef(false);
   const [clock, setClock] = useState("--:--");
   const [mounted, setMounted] = useState(false);
+  const [inApp, setInApp] = useState(false);
 
   useEffect(() => {
     setMounted(true);
+    setInApp(isNativeBridge());
     const tick = () => setClock(formatClock());
     tick();
     const id = window.setInterval(tick, 30_000);
     return () => window.clearInterval(id);
   }, []);
+
+  // Inside the Android app the first launch is a hello, not a setup card.
+  useEffect(() => {
+    if (mounted && inApp && !settings.onboarded) void greetOnce();
+  }, [mounted, inApp, settings.onboarded]);
 
   const onHoldStart = useCallback(() => {
     if (listen !== "idle") return;
@@ -118,7 +131,7 @@ export function AetherShell() {
         </button>
       </header>
 
-      {mounted && !settings.onboarded ? (
+      {mounted && !inApp && !settings.onboarded ? (
         <div className="mb-3 rounded-[20px] bg-elevated p-4 shadow-[var(--shadow-border)]">
           <p className="text-sm leading-relaxed">
             Hold the silver disc and speak. Spacebar works on a computer.

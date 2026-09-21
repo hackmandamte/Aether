@@ -167,6 +167,7 @@ function describeUpstream(status: number): string {
   if (status === 402 || status === 403) {
     return "The AI account refused the request (no credit or no access). Check the provider account.";
   }
+  if (status === 404) return "The AI model wasn't found. Check LLM_MODEL on the server.";
   if (status === 429) return "The AI service is busy or rate-limited. Try again in a minute.";
   return `Aether's brain hit an error (${status}).`;
 }
@@ -250,9 +251,12 @@ export const askAether = createServerFn({ method: "POST" })
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: provider.chatModel,
-        max_tokens: 360,
+        // Room for hidden "thinking" tokens on reasoning models, plus the spoken reply.
+        max_tokens: 1024,
         temperature: 0.7,
         tools: TOOLS,
+        // Keep reasoning short so replies stay quick (gpt-oss models accept this).
+        ...(provider.chatModel.includes("gpt-oss") ? { reasoning_effort: "low" } : {}),
         messages: [
           { role: "system", content: systemPrompt(data.language) },
           ...data.messages.slice(-12).map((m) => ({ role: m.role, content: m.text })),

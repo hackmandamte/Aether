@@ -1,6 +1,6 @@
 import { getAccessCode } from "./access";
 import { askAether, hearAether, speakAether, toChatPayload } from "./ai";
-import { runPhoneActions } from "./native";
+import { getNativeAccessCode, runPhoneActions } from "./native";
 import { useAether } from "./store";
 import {
   base64ToAudioUrl,
@@ -53,6 +53,11 @@ export async function cancelRecording() {
   useAether.getState().setListen("idle");
 }
 
+/** The app's built-in code if there is one, otherwise whatever was typed into Settings. */
+async function accessCode(): Promise<string> {
+  return (await getNativeAccessCode()) || getAccessCode();
+}
+
 /** Back to idle with a message the user can read. */
 function fail(message: string) {
   const store = useAether.getState();
@@ -75,7 +80,7 @@ export async function finishRecordingAndReply() {
     const language = useAether.getState().settings.language;
     const heard = await hearAether({
       data: {
-        accessCode: getAccessCode(),
+        accessCode: await accessCode(),
         audioBase64: b64,
         mimeType: blob.type || "audio/webm",
         language,
@@ -109,7 +114,7 @@ export async function sendText(text: string) {
   try {
     reply = await askAether({
       data: {
-        accessCode: getAccessCode(),
+        accessCode: await accessCode(),
         messages: toChatPayload(useAether.getState().messages),
         language: store.settings.language,
       },
@@ -142,6 +147,23 @@ export async function sendText(text: string) {
   await speak(spoken);
 }
 
+const GREETING =
+  "Hi, I'm Aether, your personal assistant. Hold the disc and talk to me, or long-press Home.";
+
+/** First launch inside the app: say hello once, then get out of the way. */
+export async function greetOnce() {
+  const store = useAether.getState();
+  if (store.settings.onboarded) return;
+  store.setOnboarded();
+  store.addMessage({
+    id: crypto.randomUUID(),
+    role: "assistant",
+    text: GREETING,
+    at: Date.now(),
+  });
+  await speak(GREETING);
+}
+
 export async function speak(text: string) {
   const store = useAether.getState();
   store.setListen("speaking");
@@ -150,7 +172,7 @@ export async function speak(text: string) {
     if (serverVoice) {
       const voice = await speakAether({
         data: {
-          accessCode: getAccessCode(),
+          accessCode: await accessCode(),
           text,
           voice: store.settings.voice,
           language: store.settings.language,

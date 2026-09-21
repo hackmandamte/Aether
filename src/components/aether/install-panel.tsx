@@ -2,7 +2,7 @@ import { Download, Smartphone } from "lucide-react";
 import { useEffect, useState } from "react";
 import { LANGUAGES, VOICES } from "@/lib/aether/types";
 import { getAccessCode, setAccessCode } from "@/lib/aether/access";
-import { isNativeBridge } from "@/lib/aether/native";
+import { getNativeAccessCode, isNativeBridge } from "@/lib/aether/native";
 import { useAether } from "@/lib/aether/store";
 import { Button } from "@/components/ui/button";
 
@@ -35,10 +35,12 @@ export function InstallPanel() {
   const [code, setCode] = useState("");
   const [hasCode, setHasCode] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [managed, setManaged] = useState(false);
 
   useEffect(() => {
     setOrigin(window.location.origin);
     setHasCode(getAccessCode().length > 0);
+    void getNativeAccessCode().then((c) => setManaged(c.length > 0));
   }, []);
 
   // Check for the APK, and keep checking only until it exists.
@@ -106,8 +108,8 @@ export function InstallPanel() {
           <Smartphone className="mt-0.5 size-5 text-muted" />
           <div className="space-y-3">
             <p className="text-sm leading-relaxed">
-              3 GB tuned. After install, open Aether and paste this site's
-              link when it asks.
+              3 GB tuned. Build the APK once from GitHub, install it, and open
+              Aether. It connects to this site by itself.
             </p>
             {origin ? (
               <p className="break-all rounded-[12px] bg-subtle px-3 py-2 text-xs tabular-nums text-muted">
@@ -166,27 +168,35 @@ export function InstallPanel() {
         <h3 className="text-xs font-medium uppercase tracking-[0.14em] text-faint">
           Access code
         </h3>
-        <p className="text-xs leading-relaxed text-muted">
-          The code set as AETHER_ACCESS_CODE on the server. It stays on this
-          device and unlocks talking to Aether.{" "}
-          {hasCode ? "A code is saved." : "No code saved yet."}
-        </p>
-        <div className="flex gap-2">
-          <input
-            type="password"
-            autoComplete="off"
-            autoCapitalize="none"
-            spellCheck={false}
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            placeholder={hasCode ? "Replace code" : "Enter code"}
-            aria-label="Access code"
-            className="min-h-11 flex-1 rounded-[var(--radius-lg)] bg-elevated px-4 text-sm text-fg shadow-[var(--shadow-border)] placeholder:text-faint outline-none focus:shadow-[var(--shadow-border-hover)]"
-          />
-          <Button variant="quiet" onClick={saveCode} disabled={!code.trim() && !hasCode}>
-            {code.trim() ? "Save" : "Clear"}
-          </Button>
-        </div>
+        {managed ? (
+          <p className="text-xs leading-relaxed text-muted">
+            This app unlocks Aether for you. Nothing to enter.
+          </p>
+        ) : (
+          <>
+            <p className="text-xs leading-relaxed text-muted">
+              The code set as AETHER_ACCESS_CODE on the server. It stays on this
+              device and unlocks talking to Aether.{" "}
+              {hasCode ? "A code is saved." : "No code saved yet."}
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="password"
+                autoComplete="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                placeholder={hasCode ? "Replace code" : "Enter code"}
+                aria-label="Access code"
+                className="min-h-11 flex-1 rounded-[var(--radius-lg)] bg-elevated px-4 text-sm text-fg shadow-[var(--shadow-border)] placeholder:text-faint outline-none focus:shadow-[var(--shadow-border-hover)]"
+              />
+              <Button variant="quiet" onClick={saveCode} disabled={!code.trim() && !hasCode}>
+                {code.trim() ? "Save" : "Clear"}
+              </Button>
+            </div>
+          </>
+        )}
       </section>
 
       <section className="space-y-3">

@@ -48,6 +48,8 @@ public class MainActivity extends AppCompatActivity {
     private WebView webView;
     private AetherBridge bridge;
     private String pinnedOrigin;
+    /** Site compiled into the APK. When set, the app connects by itself and can't be repointed. */
+    private String bakedOrigin;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -94,7 +96,7 @@ public class MainActivity extends AppCompatActivity {
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 if (request.isForMainFrame() && pinnedOrigin != null
                         && pinnedOrigin.equals(originOf(request.getUrl()))) {
-                    view.loadUrl(BOOT_URL + "?error=1");
+                    view.loadUrl(BOOT_URL + "?error=1" + (bakedOrigin != null ? "&locked=1" : ""));
                 }
             }
         });
@@ -119,7 +121,10 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        pinnedOrigin = normalizeOrigin(getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_ORIGIN, ""));
+        bakedOrigin = normalizeOrigin(BuildConfig.SITE_URL);
+        pinnedOrigin = bakedOrigin != null
+                ? bakedOrigin
+                : normalizeOrigin(getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_ORIGIN, ""));
         installBridge();
         requestCorePermissions();
         maybeAskAssistantRole();
@@ -158,6 +163,12 @@ public class MainActivity extends AppCompatActivity {
         try {
             JSONObject request = new JSONObject(data);
             id = request.optString("id", "");
+            if ("config".equals(request.optString("type"))) {
+                // Only hand out the built-in code when the site was fixed at build time.
+                JSONObject config = AetherBridge.result(true, "config");
+                config.put("accessCode", bakedOrigin != null ? BuildConfig.ACCESS_CODE : "");
+                return new JSONObject().put("id", id).put("result", config).toString();
+            }
             JSONObject action = request.optJSONObject("action");
             JSONObject result = action == null
                     ? AetherBridge.result(false, "Bad request")
@@ -177,6 +188,7 @@ public class MainActivity extends AppCompatActivity {
             loadDestination();
             return;
         }
+        if (bakedOrigin != null) return; // built for one site: no reconfiguring
         if (!"configure".equals(action)) return;
 
         final String origin = normalizeOrigin(uri.getQueryParameter("origin"));

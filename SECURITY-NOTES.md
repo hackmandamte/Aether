@@ -57,3 +57,11 @@
 - No CSP or `frame-ancestors` is set, because the Grok preview embeds the app. Add them once you host it yourself.
 - Google Fonts is loaded from Google (privacy). Self-host the font to avoid it.
 - The Grok-generated scaffolding (`src/lib/auth`, `preview-host-bridge`, `.grok/`) is untouched.
+
+## Seamless app (site and code built in)
+
+- Add two repo secrets in GitHub (Settings -> Secrets and variables -> Actions): `AETHER_SITE_URL` (e.g. `https://your-project.vercel.app`) and `AETHER_ACCESS_CODE` (same value as on the server; letters, numbers and `+ / = _ . : -` only).
+- The APK is then built for that one site: no setup screen, no code to type, and it can't be repointed. On first launch it says hello once.
+- Trade-off: the code is compiled into the APK, so anyone who gets the APK file can extract it. Keep the repo and its releases private and don't share the APK. To rotate the code, change it on Vercel, update the GitHub secret, and rebuild.
+- The code is only handed to the pinned site's top frame, and only when the app was built with a fixed site.
+- Without saved signing secrets each CI build uses a new one-off key, so uninstall the old app before installing a new APK. Web-only changes never need a new APK.

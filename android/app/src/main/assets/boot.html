@@ -48,14 +48,20 @@
   <body>
     <h1>Aether</h1>
     <p id="err" class="err" hidden>Couldn't reach your Aether site. Check your connection, or enter a different link.</p>
-    <p>Paste your Aether site link (https://…) from Chrome on this phone, then Connect. You'll be asked to confirm. Only connect to a site you run.</p>
-    <input id="origin" placeholder="https://…" inputmode="url" autocapitalize="none" autocomplete="off" />
-    <button id="go">Connect</button>
+    <div id="setup">
+      <p>Paste your Aether site link (https://…) from Chrome on this phone, then Connect. You'll be asked to confirm. Only connect to a site you run.</p>
+      <input id="origin" placeholder="https://…" inputmode="url" autocapitalize="none" autocomplete="off" />
+      <button id="go">Connect</button>
+    </div>
     <button id="retry" class="quiet" hidden>Try again</button>
     <script>
       if (location.search.indexOf("error=1") !== -1) {
         document.getElementById("err").hidden = false;
         document.getElementById("retry").hidden = false;
+      }
+      // Built with a fixed site: nothing to enter, just retry.
+      if (location.search.indexOf("locked=1") !== -1) {
+        document.getElementById("setup").hidden = true;
       }
       document.getElementById("go").onclick = function () {
         var v = document.getElementById("origin").value.trim();
