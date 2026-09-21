@@ -305,15 +305,220 @@ export const askAether = createServerFn({ method: "POST" })
     return { ok: true, text: text.slice(0, 1200), actions };
   });
 
+/** Map Eta voice profiles → Microsoft neural voice names (Jarvis-style online TTS). */
+const EDGE_VOICE: Record<VoiceId, string> = {
+  "calm-f": "en-US-JennyNeural",
+  "warm-f": "en-US-AriaNeural",
+  "joyful-f": "en-US-SaraNeural",
+  "gentle-f": "en-US-EmmaNeural",
+  "clear-m": "en-US-GuyNeural",
+  "deep-m": "en-GB-RyanNeural", // classic Jarvis-ish British male
+  "upbeat-m": "en-US-DavisNeural",
+  "serious-m": "en-GB-ThomasNeural",
+};
+
+const EDGE_LANG: Record<LanguageId, string> = {
+  en: "en-US",
+  fr: "fr-FR",
+  hi: "hi-IN",
+  ar: "ar-SA",
+  sw: "sw-KE",
+  es: "es-ES",
+  pt: "pt-BR",
+};
+
+/**
+ * Online Microsoft Edge neural TTS (same family Jarvis clones use).
+ * No models on the phone — server fetches audio and returns base64.
+ */
+async function edgeNeuralTts(
+  text: string,
+  voiceId: VoiceId,
+  language: LanguageId,
+): Promise<{ mime: string; b64: string } | null> {
+  const voice =
+    language === "en"
+      ? EDGE_VOICE[voiceId] ?? "en-US-AriaNeural"
+      : `${EDGE_LANG[language]}-Neural`.replace(
+          /^(..)-(..)-Neural$/,
+          (_, a, b) => {
+            // Prefer known locale voices; fall back to en
+            const map: Record<string, string> = {
+              "fr-FR": "fr-FR-DeniseNeural",
+              "hi-IN": "hi-IN-SwaraNeural",
+              "ar-SA": "ar-SA-ZariyahNeural",
+              "es-ES": "es-ES-ElviraNeural",
+              "pt-BR": "pt-BR-FranciscaNeural",
+              "sw-KE": "en-US-AriaNeural",
+            };
+            return map[`${a}-${b}`] ?? EDGE_VOICE[voiceId] ?? "en-US-AriaNeural";
+          },
+        );
+
+  // Token used by Edge Read Aloud / edge-tts clients
+  const TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
+  const endpoint =
+    `https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1` +
+    `?TrustedClientToken=${TOKEN}`;
+
+  const ssml =
+    `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='${EDGE_LANG[language] ?? "en-US"}'>` +
+    `<voice name='${voice}'>` +
+    text.replace(/[<>&'"]/g, (c) =>
+      ({ "<": "<", ">": ">", "&": "&", "'": "'", '"': """ })[c] ?? c,
+    ) +
+    `</voice></speak>`;
+
+  try {
+    // WebSocket path is ideal; many hosts block WS from serverless.
+    // HTTP POST alternative used by some edge-tts ports:
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/ssml+xml",
+        "X-Microsoft-OutputFormat": "audio-24khz-48kbitrate-mono-mp3",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
+        Origin: "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold",
+        Referer: "https://www.bing.com/",
+      },
+      body: ssml,
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) {
+      console.error("[aether] edge-tts HTTP", res.status);
+      return null;
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.byteLength < 200) return null;
+    return { mime: "audio/mpeg", b64: buf.toString("base64") };
+  } catch (err) {
+    console.error("[aether] edge-tts failed", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+/** Chunk long text for Google Translate TTS (online, no key, short clips). */
+function chunkText(text: string, max = 160): string[] {
+  const words = text.split(/\s+/);
+  const parts: string[] = [];
+  let cur = "";
+  for (const w of words) {
+    if ((cur + " " + w).trim().length > max) {
+      if (cur) parts.push(cur.trim());
+      cur = w;
+    } else {
+      cur = (cur + " " + w).trim();
+    }
+  }
+  if (cur) parts.push(cur.trim());
+  return parts.slice(0, 8);
+}
+
+async function googleTranslateTts(
+  text: string,
+  language: LanguageId,
+): Promise<{ mime: string; b64: string } | null> {
+  const tl = EDGE_LANG[language]?.slice(0, 2) ?? "en";
+  const chunks = chunkText(text);
+  const buffers: Buffer[] = [];
+  for (const part of chunks) {
+    const url =
+      "https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=" +
+      encodeURIComponent(tl) +
+      "&q=" +
+      encodeURIComponent(part);
+    try {
+      const res = await fetch(url, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/131.0.0.0 Mobile Safari/537.36",
+          Referer: "https://translate.google.com/",
+        },
+        signal: AbortSignal.timeout(12_000),
+      });
+      if (!res.ok) continue;
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (buf.byteLength > 100) buffers.push(buf);
+    } catch {
+      /* try next chunk */
+    }
+  }
+  if (!buffers.length) return null;
+  return { mime: "audio/mpeg", b64: Buffer.concat(buffers).toString("base64") };
+}
+
+async function xaiTts(
+  text: string,
+  ttsUrl: string,
+  key: string | undefined,
+): Promise<{ mime: string; b64: string } | null> {
+  if (!key) return null;
+  // OpenAI-compatible shape many providers accept
+  const res = await callProvider(ttsUrl, key, {
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: process.env.TTS_MODEL ?? "grok-tts",
+      input: text,
+      voice: "alloy",
+    }),
+  });
+  if (!res || !res.ok) {
+    if (res) console.error("[aether] xai tts", res.status);
+    return null;
+  }
+  const ctype = res.headers.get("content-type") ?? "audio/mpeg";
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.byteLength < 100) return null;
+  return { mime: ctype.split(";")[0], b64: buf.toString("base64") };
+}
+
 export const speakAether = createServerFn({ method: "POST" })
   .inputValidator(SpeakInput)
   .handler(async ({ data }) => {
     const gate = await authorize(data.accessCode);
     if (!gate.ok) return { ok: false as const, error: gate.error };
+
     const text = data.text.replace(/[#*_`]/g, "").trim().slice(0, 800);
     if (!text) return { ok: false as const, error: "Nothing to say." };
-    // Always prefer the phone voice from the client; this endpoint remains for compatibility.
-    return { ok: false as const, error: "Using the phone's voice.", device: true as const };
+
+    // 1) Provider TTS (xAI) when configured
+    const provider = await getProvider();
+    if (provider.ttsUrl) {
+      const fromXai = await xaiTts(text, provider.ttsUrl, provider.key);
+      if (fromXai) {
+        return {
+          ok: true as const,
+          audioBase64: fromXai.b64,
+          mimeType: fromXai.mime,
+          source: "xai" as const,
+        };
+      }
+    }
+
+    // 2) Microsoft Edge neural voices online (Jarvis-style, no phone models)
+    const fromEdge = await edgeNeuralTts(text, data.voice, data.language);
+    if (fromEdge) {
+      return {
+        ok: true as const,
+        audioBase64: fromEdge.b64,
+        mimeType: fromEdge.mime,
+        source: "edge" as const,
+      };
+    }
+
+    // 3) Google Translate TTS online fallback (always audible when network works)
+    const fromGoogle = await googleTranslateTts(text, data.language);
+    if (fromGoogle) {
+      return {
+        ok: true as const,
+        audioBase64: fromGoogle.b64,
+        mimeType: fromGoogle.mime,
+        source: "google" as const,
+      };
+    }
+
+    return { ok: false as const, error: "Online voice is offline. Check connection." };
   });
 
 export const hearAether = createServerFn({ method: "POST" })
