@@ -4,6 +4,7 @@ import {
   MessageSquarePlus,
   Settings2,
   StickyNote,
+  Sun,
   Volume2,
   Wifi,
   X,
@@ -12,7 +13,7 @@ import { useEffect, useState } from "react";
 import { getAccessCode, setAccessCode } from "@/lib/aether/access";
 import { getNativeAccessCode, isNativeBridge, runPhoneAction } from "@/lib/aether/native";
 import { useAether } from "@/lib/aether/store";
-import { LANGUAGES, VOICES } from "@/lib/aether/types";
+import { LANGUAGES } from "@/lib/aether/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -21,7 +22,6 @@ export function Drawer() {
   const setDrawerOpen = useAether((s) => s.setDrawerOpen);
   const clearMessages = useAether((s) => s.clearMessages);
   const settings = useAether((s) => s.settings);
-  const setVoice = useAether((s) => s.setVoice);
   const setLanguage = useAether((s) => s.setLanguage);
   const device = useAether((s) => s.device);
   const notes = useAether((s) => s.notes);
@@ -54,17 +54,15 @@ export function Drawer() {
 
   return (
     <>
-      {/* Scrim */}
       <div
         className={cn(
-          "fixed inset-0 z-40 bg-black/50 transition-opacity duration-300",
+          "fixed inset-0 z-40 bg-black/55 backdrop-blur-[2px] transition-opacity duration-300",
           open ? "opacity-100" : "pointer-events-none opacity-0",
         )}
         onClick={() => setDrawerOpen(false)}
         aria-hidden={!open}
       />
 
-      {/* Panel */}
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex w-[min(20rem,88vw)] flex-col bg-elevated shadow-2xl transition-transform duration-300 ease-out",
@@ -75,7 +73,10 @@ export function Drawer() {
         aria-label="Menu"
       >
         <div className="flex items-center justify-between border-b border-border px-4 py-4 pt-[max(1rem,env(safe-area-inset-top))]">
-          <p className="font-display text-lg font-medium tracking-tight">Eta</p>
+          <div>
+            <p className="font-display text-lg font-medium tracking-tight">Eta</p>
+            <p className="text-[11px] text-faint">Personal assistant</p>
+          </div>
           <button
             type="button"
             onClick={() => setDrawerOpen(false)}
@@ -89,11 +90,7 @@ export function Drawer() {
         <div className="flex-1 overflow-y-auto px-3 py-3">
           {section === "main" ? (
             <nav className="space-y-1">
-              <DrawerRow
-                icon={MessageSquarePlus}
-                label="New chat"
-                onClick={newChat}
-              />
+              <DrawerRow icon={MessageSquarePlus} label="New chat" onClick={newChat} />
               <DrawerRow
                 icon={Settings2}
                 label="Settings"
@@ -106,7 +103,7 @@ export function Drawer() {
               />
 
               <p className="mb-2 mt-6 px-3 text-[11px] font-medium uppercase tracking-[0.12em] text-faint">
-                Quick actions
+                Device
               </p>
               <DrawerRow
                 icon={Flashlight}
@@ -120,7 +117,7 @@ export function Drawer() {
               />
               <DrawerRow
                 icon={Wifi}
-                label="Wi-Fi settings"
+                label="Wi-Fi"
                 onClick={() => void runPhoneAction({ action: "wifi" })}
               />
               <DrawerRow
@@ -128,24 +125,45 @@ export function Drawer() {
                 label="Bluetooth"
                 onClick={() => void runPhoneAction({ action: "bluetooth" })}
               />
-              <DrawerRow
-                icon={Volume2}
-                label={`Volume ${device.volume}/15`}
-                onClick={() => undefined}
-              />
-              <input
-                type="range"
-                min={0}
-                max={15}
-                value={device.volume}
-                onChange={(e) =>
-                  void runPhoneAction({
-                    action: "volume",
-                    value: Number(e.target.value),
-                  })
-                }
-                className="mx-3 mt-1 w-[calc(100%-1.5rem)] accent-accent"
-              />
+
+              <div className="mt-3 space-y-4 rounded-2xl bg-subtle/80 px-3 py-3">
+                <label className="block">
+                  <span className="mb-2 flex items-center gap-2 text-xs text-muted">
+                    <Volume2 className="size-3.5" /> Volume · {device.volume}/15
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={15}
+                    value={device.volume}
+                    onChange={(e) =>
+                      void runPhoneAction({
+                        action: "volume",
+                        value: Number(e.target.value),
+                      })
+                    }
+                    className="w-full accent-accent"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-2 flex items-center gap-2 text-xs text-muted">
+                    <Sun className="size-3.5" /> Brightness · {device.brightness}%
+                  </span>
+                  <input
+                    type="range"
+                    min={5}
+                    max={100}
+                    value={device.brightness}
+                    onChange={(e) =>
+                      void runPhoneAction({
+                        action: "brightness",
+                        value: Number(e.target.value),
+                      })
+                    }
+                    className="w-full accent-accent"
+                  />
+                </label>
+              </div>
             </nav>
           ) : null}
 
@@ -161,25 +179,10 @@ export function Drawer() {
 
               <div>
                 <p className="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-faint">
-                  Voice
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {VOICES.map((v) => (
-                    <Button
-                      key={v.id}
-                      size="sm"
-                      variant={settings.voice === v.id ? "primary" : "quiet"}
-                      onClick={() => setVoice(v.id)}
-                    >
-                      {v.label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <p className="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-faint">
                   Language
+                </p>
+                <p className="mb-2 text-xs text-muted">
+                  Voice uses your phone's built-in speech in this language.
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {LANGUAGES.map((l) => (
@@ -201,7 +204,9 @@ export function Drawer() {
                     Access code
                   </p>
                   <p className="mb-2 text-xs text-muted">
-                    {hasCode ? "A code is saved on this device." : "Enter the server access code once."}
+                    {hasCode
+                      ? "A code is saved on this device."
+                      : "Enter the server access code once."}
                   </p>
                   <div className="flex gap-2">
                     <input
