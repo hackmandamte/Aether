@@ -1,5 +1,4 @@
 import {
-  ChevronLeft,
   Menu,
   MessageCircle,
   Settings2,
@@ -43,8 +42,7 @@ export function AetherShell() {
 
   useEffect(() => {
     setMounted(true);
-    if (!isNativeBridge()) return;
-    void greetOnce();
+    if (isNativeBridge()) void greetOnce();
   }, []);
 
   const selectTab = useCallback(
@@ -101,8 +99,6 @@ export function AetherShell() {
     return () => window.clearTimeout(timeout);
   }, [listen]);
 
-  const current = DESTINATIONS.find((item) => item.id === tab) ?? DESTINATIONS[0];
-
   return (
     <div className="relative mx-auto flex min-h-dvh w-full max-w-2xl flex-col bg-bg px-4 pt-[env(safe-area-inset-top)] sm:px-6">
       {device.flashlight ? <div className="pointer-events-none absolute inset-0 z-20 bg-[#f4f1e6]/80 mix-blend-screen" /> : null}
@@ -152,7 +148,6 @@ export function AetherShell() {
                 {!messages.length ? <p className="px-3 py-2 text-sm text-faint">No conversations yet.</p> : null}
               </div>
             </div>
-            {current.id !== "assist" ? <button type="button" onClick={() => selectTab("assist")} className="mt-auto flex items-center gap-2 px-3 py-3 text-sm text-muted"><ChevronLeft className="size-4" />Back to Assistant</button> : null}
           </aside>
         </div>
       ) : null}
