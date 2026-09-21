@@ -28,22 +28,17 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 
-/**
- * Hosts the Eta web app.
- *
- * Trust model: exactly one https origin is pinned. Only that origin's top frame
- * gets the AetherNative channel and the microphone.
- */
 public class MainActivity extends AppCompatActivity {
     public static final String PREFS = "aether";
     public static final String KEY_ORIGIN = "origin";
     private static final String BOOT_URL = "file:///android_asset/boot.html";
     private static final String CHANNEL = "AetherNative";
-    private static final int MAX_MESSAGE_CHARS = 4096;
+    private static final int MAX_MESSAGE_CHARS = 8192;
     private static final int REQ_PERMISSIONS = 42;
 
     private WebView webView;
     private AetherBridge bridge;
+    private AetherTts tts;
     private String pinnedOrigin;
     private String bakedOrigin;
 
@@ -54,6 +49,7 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
         webView = findViewById(R.id.webview);
         bridge = new AetherBridge(this);
+        tts = new AetherTts(this);
 
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -63,7 +59,6 @@ public class MainActivity extends AppCompatActivity {
         settings.setAllowContentAccess(false);
         settings.setAllowFileAccessFromFileURLs(false);
         settings.setAllowUniversalAccessFromFileURLs(false);
-        // Geolocation in WebView stays off — location goes through the native bridge only.
         settings.setGeolocationEnabled(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
@@ -109,11 +104,8 @@ public class MainActivity extends AppCompatActivity {
                             if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(r)) allowed.add(r);
                         }
                     }
-                    if (allowed.isEmpty()) {
-                        request.deny();
-                    } else {
-                        request.grant(allowed.toArray(new String[0]));
-                    }
+                    if (allowed.isEmpty()) request.deny();
+                    else request.grant(allowed.toArray(new String[0]));
                 });
             }
         });
@@ -126,6 +118,12 @@ public class MainActivity extends AppCompatActivity {
         requestCorePermissions();
         maybeAskAssistantRole();
         loadDestination();
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (tts != null) tts.shutdown();
+        super.onDestroy();
     }
 
     @Override
@@ -158,15 +156,36 @@ public class MainActivity extends AppCompatActivity {
         try {
             JSONObject request = new JSONObject(data);
             id = request.optString("id", "");
-            if ("config".equals(request.optString("type"))) {
+            String type = request.optString("type", "");
+
+            if ("config".equals(type)) {
                 JSONObject config = AetherBridge.result(true, "config");
                 config.put("accessCode", bakedOrigin != null ? BuildConfig.ACCESS_CODE : "");
                 return new JSONObject().put("id", id).put("result", config).toString();
             }
-            // PhoneAction is nested under "action" as an object with action/value/target/extra
+
+            // Native system TTS — bypasses broken WebView speechSynthesis
+            if ("speak".equals(type)) {
+                String text = request.optString("text", "");
+                float rate = (float) request.optDouble("rate", 1.0);
+                float pitch = (float) request.optDouble("pitch", 1.0);
+                String language = request.optString("language", "en");
+                boolean ok = tts != null && tts.speak(text, rate, pitch, language);
+                return new JSONObject()
+                        .put("id", id)
+                        .put("result", AetherBridge.result(ok, ok ? "Speaking." : "Could not speak."))
+                        .toString();
+            }
+            if ("stop_speak".equals(type)) {
+                if (tts != null) tts.stop();
+                return new JSONObject()
+                        .put("id", id)
+                        .put("result", AetherBridge.result(true, "Stopped."))
+                        .toString();
+            }
+
             JSONObject action = request.optJSONObject("action");
             if (action == null && request.has("action") && request.opt("action") instanceof String) {
-                // Flat shape: { action: "flashlight_on", value: "…" }
                 action = request;
             }
             JSONObject result = action == null
@@ -216,8 +235,7 @@ public class MainActivity extends AppCompatActivity {
             i.addCategory(Intent.CATEGORY_BROWSABLE);
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             startActivity(i);
-        } catch (Exception ignored) {
-        }
+        } catch (Exception ignored) {}
     }
 
     private void loadDestination() {
@@ -240,11 +258,7 @@ public class MainActivity extends AppCompatActivity {
     static String normalizeOrigin(String raw) {
         if (raw == null) return null;
         Uri uri;
-        try {
-            uri = Uri.parse(raw.trim());
-        } catch (Exception e) {
-            return null;
-        }
+        try { uri = Uri.parse(raw.trim()); } catch (Exception e) { return null; }
         if (uri.getUserInfo() != null || uri.getQuery() != null || uri.getFragment() != null) return null;
         String path = uri.getPath();
         if (path != null && !path.isEmpty() && !"/".equals(path)) return null;
@@ -274,17 +288,13 @@ public class MainActivity extends AppCompatActivity {
         if (rm.isRoleAvailable(RoleManager.ROLE_ASSISTANT) && !rm.isRoleHeld(RoleManager.ROLE_ASSISTANT)) {
             try {
                 startActivityForResult(rm.createRequestRoleIntent(RoleManager.ROLE_ASSISTANT), 77);
-            } catch (Exception ignored) {
-            }
+            } catch (Exception ignored) {}
         }
     }
 
     @Override
     public void onBackPressed() {
-        if (webView != null && webView.canGoBack()) {
-            webView.goBack();
-        } else {
-            super.onBackPressed();
-        }
+        if (webView != null && webView.canGoBack()) webView.goBack();
+        else super.onBackPressed();
     }
 }
