@@ -307,11 +307,11 @@ const EDGE_LANG: Record<LanguageId, string> = {
 
 function escapeXml(s: string): string {
   return s
-    .replace(/&/g, "&")
-    .replace(/</g, "<")
-    .replace(/>/g, ">")
-    .replace(/"/g, """)
-    .replace(/'/g, "'");
+    .replace(/&/g, "&" + "amp;")
+    .replace(/</g, "&" + "lt;")
+    .replace(/>/g, "&" + "gt;")
+    .replace(/"/g, "&" + "quot;")
+    .replace(/'/g, "&" + "apos;");
 }
 
 const LOCALE_EDGE_VOICE: Record<string, string> = {
@@ -361,7 +361,7 @@ async function edgeNeuralTts(
         Referer: "https://www.bing.com/",
       },
       body: ssml,
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(4_500),
     });
     if (!res.ok) {
       console.error("[aether] edge-tts HTTP", res.status);
@@ -389,7 +389,7 @@ function chunkText(text: string, max = 160): string[] {
     }
   }
   if (cur) parts.push(cur.trim());
-  return parts.slice(0, 8);
+  return parts.slice(0, 3);
 }
 
 async function googleTranslateTts(
@@ -412,7 +412,7 @@ async function googleTranslateTts(
             "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/131.0.0.0 Mobile Safari/537.36",
           Referer: "https://translate.google.com/",
         },
-        signal: AbortSignal.timeout(12_000),
+        signal: AbortSignal.timeout(3_000),
       });
       if (!res.ok) continue;
       const buf = Buffer.from(await res.arrayBuffer());
@@ -455,8 +455,37 @@ export const speakAether = createServerFn({ method: "POST" })
     const gate = await authorize(data.accessCode);
     if (!gate.ok) return { ok: false as const, error: gate.error };
 
-    const text = data.text.replace(/[#*_`]/g, "").trim().slice(0, 800);
+    const text = data.text.replace(/[#*_`]/g, "").trim().slice(0, 280);
     if (!text) return { ok: false as const, error: "Nothing to say." };
+
+    type Clip = { mime: string; b64: string; source: "google" | "edge" | "xai" };
+    const winner = await new Promise<Clip | null>((resolve) => {
+      let pending = 2;
+      const done = (clip: Clip | null) => {
+        if (clip && clip.b64) {
+          resolve(clip);
+          pending = -1;
+          return;
+        }
+        pending -= 1;
+        if (pending === 0) resolve(null);
+      };
+      void googleTranslateTts(text, data.language)
+        .then((c) => done(c ? { ...c, source: "google" } : null))
+        .catch(() => done(null));
+      void edgeNeuralTts(text, data.voice, data.language)
+        .then((c) => done(c ? { ...c, source: "edge" } : null))
+        .catch(() => done(null));
+    });
+
+    if (winner) {
+      return {
+        ok: true as const,
+        audioBase64: winner.b64,
+        mimeType: winner.mime,
+        source: winner.source,
+      };
+    }
 
     const provider = await getProvider();
     if (provider.ttsUrl) {
@@ -469,26 +498,6 @@ export const speakAether = createServerFn({ method: "POST" })
           source: "xai" as const,
         };
       }
-    }
-
-    const fromEdge = await edgeNeuralTts(text, data.voice, data.language);
-    if (fromEdge) {
-      return {
-        ok: true as const,
-        audioBase64: fromEdge.b64,
-        mimeType: fromEdge.mime,
-        source: "edge" as const,
-      };
-    }
-
-    const fromGoogle = await googleTranslateTts(text, data.language);
-    if (fromGoogle) {
-      return {
-        ok: true as const,
-        audioBase64: fromGoogle.b64,
-        mimeType: fromGoogle.mime,
-        source: "google" as const,
-      };
     }
 
     return { ok: false as const, error: "Online voice is offline. Check connection." };
