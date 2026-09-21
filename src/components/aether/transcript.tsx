@@ -1,21 +1,20 @@
 import {
+  AtSign,
   Camera,
-  Chrome,
   Clock,
-  Facebook,
   Flashlight,
   Globe,
-  Instagram,
+  Image,
   MapPin,
   MessageCircle,
   Music,
+  Play,
   Search,
   Settings,
   Sun,
   Timer,
-  Twitter,
+  Users,
   Volume2,
-  Youtube,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -35,16 +34,19 @@ type Suggestion = {
   icon: LucideIcon;
 };
 
-/** Full pool — chips are a rotating sample so the welcome screen stays alive. */
+/**
+ * Full pool — welcome chips are a rotating sample so the screen stays alive.
+ * Icons are semantic (Lucide dropped trademark brand marks).
+ */
 const SUGGESTION_POOL: Suggestion[] = [
   { text: "Turn on the flashlight", icon: Flashlight },
   { text: "Turn off the flashlight", icon: Flashlight },
   { text: "Open WhatsApp", icon: MessageCircle },
-  { text: "Open Instagram", icon: Instagram },
-  { text: "Open Facebook", icon: Facebook },
-  { text: "Open YouTube", icon: Youtube },
-  { text: "Open Twitter", icon: Twitter },
-  { text: "Open Chrome", icon: Chrome },
+  { text: "Open Instagram", icon: Image },
+  { text: "Open Facebook", icon: Users },
+  { text: "Open YouTube", icon: Play },
+  { text: "Open Twitter", icon: AtSign },
+  { text: "Open Chrome", icon: Globe },
   { text: "Open Maps", icon: MapPin },
   { text: "Open Settings", icon: Settings },
   { text: "Open the camera", icon: Camera },
@@ -59,7 +61,6 @@ const SUGGESTION_POOL: Suggestion[] = [
   { text: "Open Wi-Fi settings", icon: Settings },
 ];
 
-/** Deterministic RNG so the same day+block shows the same set until time moves on. */
 function mulberry32(seed: number) {
   return () => {
     let t = (seed += 0x6d2b79f5);
@@ -73,7 +74,7 @@ function dayBlockSeed(now = new Date()): number {
   const y = now.getFullYear();
   const m = now.getMonth() + 1;
   const d = now.getDate();
-  // 4 blocks per day → suggestions rotate through the day, not only overnight
+  // 4 blocks per day → set changes through the day, not only overnight
   const block = Math.floor(now.getHours() / 6);
   return y * 100_000 + m * 1_000 + d * 10 + block;
 }
@@ -97,7 +98,6 @@ export function Transcript() {
   const [greeting] = useState(timeGreeting);
   const busy = listen !== "idle";
 
-  // Recompute when the 6-hour block rolls (or on first mount)
   const [tick, setTick] = useState(0);
   useEffect(() => {
     const id = window.setInterval(() => setTick((t) => t + 1), 60_000);
@@ -147,7 +147,7 @@ export function Transcript() {
                   )}
                 >
                   <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-subtle text-fg">
-                    <Icon className="size-4.5" strokeWidth={1.75} aria-hidden />
+                    <Icon className="size-[1.125rem]" strokeWidth={1.75} aria-hidden />
                   </span>
                   <span className="min-w-0 flex-1 font-medium leading-snug">{hint.text}</span>
                 </button>
