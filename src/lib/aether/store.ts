@@ -11,12 +11,14 @@ import type {
 } from "./types";
 
 export type ListenMode = "idle" | "recording" | "thinking" | "speaking";
+export type ThemeId = "dark" | "light";
 
 type Settings = {
   voice: VoiceId;
   language: LanguageId;
   wakeEnabled: boolean;
   onboarded: boolean;
+  theme: ThemeId;
 };
 
 type Device = {
@@ -42,6 +44,7 @@ type AetherState = {
   setListen: (listen: ListenMode) => void;
   setVoice: (voice: VoiceId) => void;
   setLanguage: (language: LanguageId) => void;
+  setTheme: (theme: ThemeId) => void;
   setWakeEnabled: (wakeEnabled: boolean) => void;
   setOnboarded: () => void;
   patchDevice: (patch: Partial<Device>) => void;
@@ -70,6 +73,7 @@ export const useAether = create<AetherState>()(
         language: "en",
         wakeEnabled: false,
         onboarded: false,
+        theme: "dark",
       },
       device: {
         flashlight: false,
@@ -92,6 +96,8 @@ export const useAether = create<AetherState>()(
         set((s) => ({ settings: { ...s.settings, voice } })),
       setLanguage: (language) =>
         set((s) => ({ settings: { ...s.settings, language } })),
+      setTheme: (theme) =>
+        set((s) => ({ settings: { ...s.settings, theme } })),
       setWakeEnabled: (wakeEnabled) =>
         set((s) => ({ settings: { ...s.settings, wakeEnabled } })),
       setOnboarded: () =>
