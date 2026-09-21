@@ -14,16 +14,21 @@ let recorder: MediaRecorder | null = null;
 let chunks: Blob[] = [];
 let stream: MediaStream | null = null;
 let playingUrl: string | null = null;
-// Flips to false once the server says it has no voice, so we stop asking every turn.
 let serverVoice = true;
 
 function stopStream() {
-  stream?.getTracks().forEach((t) => t.stop());
+  stream?.getTracks().forEach((track) => track.stop());
   stream = null;
+}
+
+function clearRecorderState() {
+  recorder = null;
+  chunks = [];
 }
 
 export async function startRecording() {
   const mime = pickRecorderMime();
+  stopStream();
   stream = await navigator.mediaDevices.getUserMedia({
     audio: {
       echoCancellation: true,
@@ -33,34 +38,36 @@ export async function startRecording() {
   });
   chunks = [];
   recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-  recorder.ondataavailable = (e) => {
-    if (e.data.size) chunks.push(e.data);
+  recorder.ondataavailable = (event) => {
+    if (event.data.size > 0) chunks.push(event.data);
   };
-  recorder.start();
+  recorder.start(100);
   useAether.getState().setListen("recording");
   useAether.getState().setError(null);
 }
 
 export async function cancelRecording() {
-  try {
-    if (recorder && recorder.state !== "inactive") recorder.stop();
-  } catch {
-    /* ignore */
+  const active = recorder;
+  if (active && active.state !== "inactive") {
+    try {
+      active.stop();
+    } catch {
+      // ignore stop exceptions; the next cleanup path resets UI state.
+    }
   }
-  recorder = null;
-  chunks = [];
+  clearRecorderState();
   stopStream();
   useAether.getState().setListen("idle");
 }
 
-/** The app's built-in code if there is one, otherwise whatever was typed into Settings. */
 async function accessCode(): Promise<string> {
   return (await getNativeAccessCode()) || getAccessCode();
 }
 
-/** Back to idle with a message the user can read. */
 function fail(message: string) {
   const store = useAether.getState();
+  clearRecorderState();
+  stopStream();
   store.setListen("idle");
   store.setError(message);
 }
@@ -70,7 +77,6 @@ const OFFLINE = "Couldn't reach Aether. Check your connection.";
 export async function finishRecordingAndReply() {
   try {
     const blob = await stopRecorder();
-    stopStream();
     if (!blob || blob.size < 800) {
       fail("Hold a little longer, then speak.");
       return;
@@ -92,7 +98,6 @@ export async function finishRecordingAndReply() {
     }
     await sendText(heard.text);
   } catch {
-    stopStream();
     fail(OFFLINE);
   }
 }
@@ -147,21 +152,28 @@ export async function sendText(text: string) {
   await speak(spoken);
 }
 
-const GREETING =
-  "Hi, I'm Aether, your personal assistant. Hold the disc and talk to me, or long-press Home.";
+function getTimeGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 5) return "Good night. I'm Aether. I'm ready when you are.";
+  if (hour < 12) return "Good morning. I'm Aether. I'm ready when you are.";
+  if (hour < 18) return "Good afternoon. I'm Aether. I'm ready when you are.";
+  return "Good evening. I'm Aether. I'm ready when you are.";
+}
 
-/** First launch inside the app: say hello once, then get out of the way. */
+const GREETING = "Hi, I'm Aether, your personal assistant. Hold the disc and talk to me, or long-press Home.";
+
 export async function greetOnce() {
   const store = useAether.getState();
   if (store.settings.onboarded) return;
   store.setOnboarded();
+  const greeting = getTimeGreeting();
   store.addMessage({
     id: crypto.randomUUID(),
     role: "assistant",
-    text: GREETING,
+    text: greeting,
     at: Date.now(),
   });
-  await speak(GREETING);
+  await speak(greeting);
 }
 
 export async function speak(text: string) {
@@ -186,7 +198,6 @@ export async function speak(text: string) {
       }
       if ("device" in voice && voice.device) serverVoice = false;
     }
-    // No server voice (free provider) or it failed: use the phone's own voice.
     await speakWithDevice(text, store.settings.language, vol);
   } catch {
     /* autoplay or network — text is already on screen */
@@ -196,18 +207,58 @@ export async function speak(text: string) {
 }
 
 function stopRecorder(): Promise<Blob | null> {
+  const current = recorder;
+  if (!current || current.state === "inactive") {
+    clearRecorderState();
+    stopStream();
+    return Promise.resolve(null);
+  }
+
   return new Promise((resolve) => {
-    const rec = recorder;
-    if (!rec || rec.state === "inactive") {
-      resolve(null);
-      return;
-    }
-    rec.onstop = () => {
-      const type = rec.mimeType || "audio/webm";
-      resolve(new Blob(chunks, { type }));
-      recorder = null;
-      chunks = [];
+    let settled = false;
+    const type = current.mimeType || "audio/webm";
+    const finish = (blob: Blob | null) => {
+      if (settled) return;
+      settled = true;
+      clearRecorderState();
+      stopStream();
+      try {
+        current.onstop = null;
+        current.onerror = null;
+      } catch {
+        // ignore cleanup errors on Android WebView
+      }
+      resolve(blob && blob.size > 0 ? blob : null);
     };
-    rec.stop();
+
+    const fallback = () => {
+      const blob = new Blob(chunks, { type });
+      finish(blob.size > 0 ? blob : null);
+    };
+
+    const timeout = window.setTimeout(() => {
+      try {
+        if (current.state !== "inactive") current.stop();
+      } catch {
+        // ignore stop errors; the timeout fallback resolves anyway.
+      }
+      fallback();
+    }, 1500);
+
+    current.onstop = () => {
+      window.clearTimeout(timeout);
+      fallback();
+    };
+    current.onerror = () => {
+      window.clearTimeout(timeout);
+      fallback();
+    };
+
+    try {
+      current.stop();
+    } catch {
+      window.clearTimeout(timeout);
+      fallback();
+    }
   });
 }
