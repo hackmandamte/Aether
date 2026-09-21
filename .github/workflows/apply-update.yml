@@ -1,0 +1,24 @@
+name: Apply update
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unpack the update zip
+        run: |
+          ZIP="$(ls aether-update-*.zip | head -n 1)"
+          if [ -z "$ZIP" ]; then echo "No aether-update zip found"; exit 1; fi
+          echo "Using $ZIP"
+          unzip -o "$ZIP" -x '.github/*'
+          rm -f aether-update-*.zip
+      - name: Commit
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Apply seamless update"
+          git push
