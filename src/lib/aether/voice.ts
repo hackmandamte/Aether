@@ -1,3 +1,5 @@
+import { VOICES, resolveVoiceId, type VoiceId } from "./types";
+
 export async function blobToBase64(blob: Blob): Promise<string> {
   const buf = await blob.arrayBuffer();
   const bytes = new Uint8Array(buf);
@@ -38,7 +40,6 @@ export async function playAudioUrl(url: string, volume = 0.85) {
     await audio.play();
     await new Promise<void>((resolve, reject) => {
       audio.onended = () => resolve();
-      // Fires when stopAudio() pauses it, so a Stop press releases the caller at once.
       audio.onpause = () => resolve();
       audio.onerror = () => reject(new Error("Playback failed"));
     });
@@ -47,14 +48,12 @@ export async function playAudioUrl(url: string, volume = 0.85) {
   }
 }
 
-/** Cut off any voice clip that is playing. */
 export function stopAudio() {
   const audio = currentAudio;
   currentAudio = null;
   if (audio) audio.pause();
 }
 
-/** Cut off the phone's built-in voice. */
 export function stopDeviceVoice() {
   if (hasDeviceVoice()) window.speechSynthesis.cancel();
 }
@@ -69,34 +68,144 @@ const DEVICE_LANG: Record<string, string> = {
   pt: "pt-BR",
 };
 
-/** True when the phone/browser has its own text-to-speech. */
 export function hasDeviceVoice(): boolean {
   return typeof window !== "undefined" && "speechSynthesis" in window;
 }
 
-/** Speak with the phone's built-in voice. Free, works offline, sounds more robotic. */
-export function speakWithDevice(text: string, language: string, volume = 0.85): Promise<void> {
+/** Wait until the OS exposes voices (Android often returns [] on the first call). */
+export function loadVoices(): Promise<SpeechSynthesisVoice[]> {
+  if (!hasDeviceVoice()) return Promise.resolve([]);
+  const synth = window.speechSynthesis;
+  const now = synth.getVoices();
+  if (now.length) return Promise.resolve(now);
+
   return new Promise((resolve) => {
-    if (!hasDeviceVoice() || !text.trim()) {
-      resolve();
-      return;
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      synth.removeEventListener("voiceschanged", finish);
+      resolve(synth.getVoices());
+    };
+    synth.addEventListener("voiceschanged", finish);
+    // Kick engines that need a touch
+    void synth.getVoices();
+    window.setTimeout(finish, 800);
+  });
+}
+
+function scoreVoice(
+  v: SpeechSynthesisVoice,
+  lang: string,
+  gender: "female" | "male" | "neutral",
+): number {
+  const name = `${v.name} ${v.lang}`.toLowerCase();
+  let score = 0;
+  if (v.lang.toLowerCase().startsWith(lang.toLowerCase().slice(0, 2))) score += 10;
+  if (v.lang.toLowerCase() === lang.toLowerCase()) score += 6;
+  if (v.default) score += 2;
+
+  const femaleHints = ["female", "woman", "zira", "samantha", "karen", "moira", "fiona", "tessa", "veena", "google us english female", "en-us-x-sfg"];
+  const maleHints = ["male", "man", "david", "mark", "daniel", "alex", "fred", "google us english male", "en-us-x-tpd"];
+
+  if (gender === "female") {
+    if (femaleHints.some((h) => name.includes(h))) score += 8;
+    if (maleHints.some((h) => name.includes(h))) score -= 6;
+  } else if (gender === "male") {
+    if (maleHints.some((h) => name.includes(h))) score += 8;
+    if (femaleHints.some((h) => name.includes(h))) score -= 6;
+  }
+
+  // Prefer local / higher quality when labeled
+  if (name.includes("enhanced") || name.includes("premium") || name.includes("neural")) score += 3;
+  if (v.localService) score += 1;
+  return score;
+}
+
+function pickVoice(
+  voices: SpeechSynthesisVoice[],
+  language: string,
+  gender: "female" | "male" | "neutral",
+): SpeechSynthesisVoice | null {
+  if (!voices.length) return null;
+  const lang = DEVICE_LANG[language] ?? language ?? "en-US";
+  let best: SpeechSynthesisVoice | null = null;
+  let bestScore = -Infinity;
+  for (const v of voices) {
+    const s = scoreVoice(v, lang, gender);
+    if (s > bestScore) {
+      bestScore = s;
+      best = v;
     }
-    const synth = window.speechSynthesis;
-    synth.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = DEVICE_LANG[language] ?? "en-US";
-    utterance.volume = Math.min(1, Math.max(0.15, volume));
-    // Some engines never fire end/error; don't leave the orb stuck on "speaking".
+  }
+  return best;
+}
+
+/**
+ * Speak with the phone's built-in TTS.
+ * Applies selected voice profile (gender preference + rate/pitch mood).
+ */
+export async function speakWithDevice(
+  text: string,
+  language: string,
+  volume = 0.85,
+  voiceId: VoiceId | string = "warm-f",
+): Promise<void> {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!hasDeviceVoice() || !clean) return;
+
+  const profile =
+    VOICES.find((v) => v.id === resolveVoiceId(voiceId)) ?? VOICES.find((v) => v.id === "warm-f")!;
+
+  const synth = window.speechSynthesis;
+  // cancel() then immediate speak() is flaky on Android WebView — pause briefly
+  synth.cancel();
+  await new Promise((r) => window.setTimeout(r, 60));
+
+  const voices = await loadVoices();
+  const chosen = pickVoice(voices, language, profile.gender);
+
+  await new Promise<void>((resolve) => {
+    const utterance = new SpeechSynthesisUtterance(clean);
+    utterance.lang = chosen?.lang || DEVICE_LANG[language] || "en-US";
+    if (chosen) utterance.voice = chosen;
+    utterance.rate = profile.rate;
+    utterance.pitch = profile.pitch;
+    utterance.volume = Math.min(1, Math.max(0.2, volume));
+
     const guard = window.setTimeout(() => {
       synth.cancel();
       resolve();
-    }, 45_000);
+    }, Math.min(60_000, 2_000 + clean.length * 80));
+
     const done = () => {
       window.clearTimeout(guard);
       resolve();
     };
     utterance.onend = done;
     utterance.onerror = done;
-    synth.speak(utterance);
+
+    try {
+      synth.speak(utterance);
+      // Chrome bug: paused synthesis after tab background — resume
+      if (synth.paused) synth.resume();
+    } catch {
+      done();
+    }
   });
+}
+
+/** One-shot warm-up so the first real reply isn't silent on Android. */
+export function warmUpDeviceVoice() {
+  if (!hasDeviceVoice()) return;
+  void loadVoices();
+  try {
+    const u = new SpeechSynthesisUtterance(" ");
+    u.volume = 0;
+    u.rate = 2;
+    window.speechSynthesis.speak(u);
+    window.speechSynthesis.cancel();
+  } catch {
+    /* ignore */
+  }
 }
