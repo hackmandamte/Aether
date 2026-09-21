@@ -41,7 +41,10 @@ export type PhoneActionName =
   | "back"
   | "wifi"
   | "bluetooth"
-  | "navigate";
+  | "navigate"
+  | "location"
+  | "search_web"
+  | "open_url";
 
 export type PhoneAction = {
   action: PhoneActionName;
@@ -56,7 +59,6 @@ export type ChatMessage = {
   text: string;
   at: number;
   actions?: PhoneAction[];
-  /** Steps Eta went through for this reply. */
   trace?: string[];
 };
 
