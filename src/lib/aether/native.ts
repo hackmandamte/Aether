@@ -7,11 +7,6 @@ import {
 import { useAether } from "./store";
 import type { ActionResult, PhoneAction } from "./types";
 
-/**
- * The Android app injects `AetherNative` with WebViewCompat.addWebMessageListener,
- * restricted by the WebView itself to this site's origin and its top frame.
- * It is message based: post a JSON request, get a JSON reply on "message".
- */
 type NativeChannel = {
   postMessage: (message: string) => void;
   addEventListener: (type: "message", listener: (event: { data: unknown }) => void) => void;
@@ -26,7 +21,7 @@ declare global {
 let torchStream: MediaStream | null = null;
 
 const NATIVE_TIMEOUT_MS = 8000;
-type NativeReply = ActionResult & { accessCode?: string };
+type NativeReply = ActionResult & { accessCode?: string; latitude?: number; longitude?: number };
 const pendingNative = new Map<string, (result: NativeReply) => void>();
 let nativeListening = false;
 
@@ -46,12 +41,11 @@ function listenForNative(channel: NativeChannel) {
         done(msg.result);
       }
     } catch {
-      /* ignore malformed replies */
+      /* ignore */
     }
   });
 }
 
-/** null = not running inside the app (use the browser fallback). */
 function postNative(body: Record<string, unknown>): Promise<NativeReply | null> {
   const channel = typeof window !== "undefined" ? window.AetherNative : undefined;
   if (!channel || typeof channel.postMessage !== "function") return Promise.resolve(null);
@@ -83,10 +77,6 @@ function nativeExecute(action: PhoneAction): Promise<ActionResult | null> {
 
 let nativeCode: string | null = null;
 
-/**
- * The access code built into the Android app (empty in a normal browser, or when the
- * app wasn't built with one). Only this site's top frame can ask; the app checks that.
- */
 export async function getNativeAccessCode(): Promise<string> {
   if (!isNativeBridge()) return "";
   if (nativeCode !== null) return nativeCode;
@@ -99,6 +89,7 @@ function openUrl(url: string) {
   const a = document.createElement("a");
   a.href = url;
   a.rel = "noopener";
+  a.target = "_blank";
   a.style.display = "none";
   document.body.appendChild(a);
   a.click();
@@ -121,9 +112,7 @@ async function setTorch(on: boolean): Promise<boolean> {
       video: { facingMode: "environment" },
     });
     const track = torchStream.getVideoTracks()[0];
-    const caps = track.getCapabilities?.() as
-      | { torch?: boolean }
-      | undefined;
+    const caps = track.getCapabilities?.() as { torch?: boolean } | undefined;
     if (!caps?.torch) {
       torchStream.getTracks().forEach((t) => t.stop());
       torchStream = null;
@@ -138,45 +127,56 @@ async function setTorch(on: boolean): Promise<boolean> {
   }
 }
 
-const APP_ALIASES: Record<string, { intent?: string; web?: string; pkg?: string }> =
-  {
-    whatsapp: {
-      web: "https://wa.me/",
-      pkg: "com.whatsapp",
-    },
-    youtube: {
-      web: "https://m.youtube.com",
-      pkg: "com.google.android.youtube",
-    },
-    chrome: {
-      web: "https://www.google.com",
-      pkg: "com.android.chrome",
-    },
-    phone: { intent: "android.intent.action.DIAL", pkg: "com.android.dialer" },
-    messages: {
-      web: "sms:",
-      pkg: "com.google.android.apps.messaging",
-    },
-    camera: {
-      intent: "android.media.action.STILL_IMAGE_CAMERA",
-      pkg: "com.transsion.camera",
-    },
-    settings: {
-      intent: "android.settings.SETTINGS",
-      pkg: "com.android.settings",
-    },
-    maps: { web: "https://maps.google.com", pkg: "com.google.android.apps.maps" },
-    clock: { pkg: "com.transsion.deskclock" },
-    files: { pkg: "com.transsion.filemanagerx" },
-    play: {
-      web: "https://play.google.com/store",
-      pkg: "com.android.vending",
-    },
-  };
+/** Common apps + aliases. Unknown names still try package launch / Play Store / web. */
+const APP_ALIASES: Record<string, { intent?: string; web?: string; pkg?: string }> = {
+  whatsapp: { web: "https://wa.me/", pkg: "com.whatsapp" },
+  "whatsapp business": { pkg: "com.whatsapp.w4b" },
+  telegram: { web: "https://t.me/", pkg: "org.telegram.messenger" },
+  signal: { pkg: "org.thoughtcrime.securesms" },
+  instagram: { web: "https://instagram.com", pkg: "com.instagram.android" },
+  facebook: { web: "https://m.facebook.com", pkg: "com.facebook.katana" },
+  messenger: { pkg: "com.facebook.orca" },
+  tiktok: { web: "https://www.tiktok.com", pkg: "com.zhiliaoapp.musically" },
+  twitter: { web: "https://x.com", pkg: "com.twitter.android" },
+  x: { web: "https://x.com", pkg: "com.twitter.android" },
+  snapchat: { pkg: "com.snapchat.android" },
+  youtube: { web: "https://m.youtube.com", pkg: "com.google.android.youtube" },
+  "youtube music": { pkg: "com.google.android.apps.youtube.music" },
+  spotify: { web: "https://open.spotify.com", pkg: "com.spotify.music" },
+  netflix: { web: "https://www.netflix.com", pkg: "com.netflix.mediaclient" },
+  chrome: { web: "https://www.google.com", pkg: "com.android.chrome" },
+  browser: { web: "https://www.google.com", pkg: "com.android.chrome" },
+  gmail: { web: "https://mail.google.com", pkg: "com.google.android.gm" },
+  mail: { web: "https://mail.google.com", pkg: "com.google.android.gm" },
+  email: { web: "https://mail.google.com", pkg: "com.google.android.gm" },
+  phone: { intent: "android.intent.action.DIAL", pkg: "com.android.dialer" },
+  dialer: { intent: "android.intent.action.DIAL", pkg: "com.android.dialer" },
+  contacts: { pkg: "com.android.contacts" },
+  messages: { web: "sms:", pkg: "com.google.android.apps.messaging" },
+  sms: { web: "sms:", pkg: "com.google.android.apps.messaging" },
+  camera: {
+    intent: "android.media.action.STILL_IMAGE_CAMERA",
+    pkg: "com.transsion.camera",
+  },
+  settings: { intent: "android.settings.SETTINGS", pkg: "com.android.settings" },
+  maps: { web: "https://maps.google.com", pkg: "com.google.android.apps.maps" },
+  google: { web: "https://www.google.com", pkg: "com.google.android.googlequicksearchbox" },
+  clock: { pkg: "com.transsion.deskclock" },
+  calendar: { pkg: "com.google.android.calendar" },
+  files: { pkg: "com.transsion.filemanagerx" },
+  gallery: { pkg: "com.google.android.apps.photos" },
+  photos: { pkg: "com.google.android.apps.photos" },
+  play: { web: "https://play.google.com/store", pkg: "com.android.vending" },
+  "play store": { web: "https://play.google.com/store", pkg: "com.android.vending" },
+  calculator: { pkg: "com.google.android.calculator" },
+  weather: { pkg: "com.google.android.apps.weather" },
+  uber: { pkg: "com.ubercab" },
+  bolt: { pkg: "com.bolt.client" },
+  bank: { pkg: "com.google.android.apps.nbu.paisa.user" },
+};
 
 type Prepared = { action: PhoneAction } | { error: string };
 
-/** Turn loose model output into strict values before anything touches the phone. */
 function prepare(action: PhoneAction): Prepared {
   switch (action.action) {
     case "alarm": {
@@ -190,7 +190,9 @@ function prepare(action: PhoneAction): Prepared {
       return { action: { ...action, value: String(seconds) } };
     }
     case "volume":
-      return { action: { ...action, value: String(parseLevel(action.value ?? action.target, 11, 0, 15)) } };
+      return {
+        action: { ...action, value: String(parseLevel(action.value ?? action.target, 11, 0, 15)) },
+      };
     case "brightness":
       return {
         action: { ...action, value: String(parseLevel(action.value ?? action.target, 70, 5, 100)) },
@@ -206,8 +208,9 @@ export async function runPhoneAction(action: PhoneAction): Promise<ActionResult>
   let applied: PhoneAction = action;
 
   if (action.action === "note" || action.action === "reminder") {
-    // In-app features: the phone has nothing to do, so never send these to the bridge.
     result = runLocalAction(action);
+  } else if (action.action === "location") {
+    result = (await nativeExecute(action)) ?? (await getBrowserLocation());
   } else {
     const prepared = prepare(action);
     if ("error" in prepared) {
@@ -218,7 +221,6 @@ export async function runPhoneAction(action: PhoneAction): Promise<ActionResult>
     }
   }
 
-  // Only mirror state that actually changed.
   if (result.ok) applyLocal(applied);
   store.setLastAction(result.message);
   return result;
@@ -230,7 +232,8 @@ function runLocalAction(action: PhoneAction): ActionResult {
     return {
       ok: false,
       native: false,
-      message: action.action === "note" ? "What should I note down?" : "What should I remind you about?",
+      message:
+        action.action === "note" ? "What should I note down?" : "What should I remind you about?",
     };
   }
   return {
@@ -262,7 +265,6 @@ function applyLocal(action: PhoneAction) {
     }
     case "reminder": {
       const text = String(action.target ?? action.extra ?? "").trim();
-      // Reminders are in-app only and default to an hour from now.
       if (text) s.addReminder(text, Date.now() + 60 * 60 * 1000);
       break;
     }
@@ -277,6 +279,51 @@ function applyLocal(action: PhoneAction) {
     default:
       break;
   }
+}
+
+async function getBrowserLocation(): Promise<ActionResult> {
+  if (!navigator.geolocation) {
+    return { ok: false, native: false, message: "Location is not available on this device." };
+  }
+  try {
+    const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        timeout: 12_000,
+        maximumAge: 60_000,
+      });
+    });
+    const { latitude, longitude } = pos.coords;
+    openUrl(`https://maps.google.com/?q=${latitude},${longitude}`);
+    return {
+      ok: true,
+      native: false,
+      message: `You're around ${latitude.toFixed(4)}, ${longitude.toFixed(4)}. Opening maps.`,
+    };
+  } catch {
+    return {
+      ok: false,
+      native: false,
+      message: "Couldn't get location. Allow location permission and try again.",
+    };
+  }
+}
+
+function launchAnyApp(name: string): ActionResult {
+  const key = name.toLowerCase().trim();
+  if (!key) return { ok: false, native: false, message: "Which app should I open?" };
+
+  const hit =
+    APP_ALIASES[key] ?? Object.entries(APP_ALIASES).find(([n]) => key.includes(n) || n.includes(key))?.[1];
+
+  if (hit?.web) openUrl(hit.web);
+  else if (hit?.intent) openUrl(intentUrl(hit.intent));
+  else if (hit?.pkg) openUrl(`intent://#Intent;package=${hit.pkg};end`);
+  else {
+    // Unknown app: try Play Store search, then generic web search as last resort
+    openUrl(`https://play.google.com/store/search?q=${encodeURIComponent(name)}&c=apps`);
+  }
+  return { ok: true, native: false, message: `Opening ${name}.` };
 }
 
 async function runWebAction(action: PhoneAction): Promise<ActionResult> {
@@ -299,28 +346,24 @@ async function runWebAction(action: PhoneAction): Promise<ActionResult> {
       return {
         ok: true,
         native: false,
-        message: `Volume set to ${action.value ?? 11} of 15 in Aether. The APK changes the real ringer.`,
+        message: `Volume set to ${action.value ?? 11} of 15.`,
       };
     case "brightness":
       return {
         ok: true,
         native: false,
-        message: `Brightness ${action.value ?? 70}%. The APK writes the real screen level.`,
+        message: `Brightness ${action.value ?? 70}%.`,
       };
     case "call": {
       const n = String(action.target ?? "").replace(/[^\d+]/g, "");
-      if (!n) {
-        return { ok: false, native: false, message: "Who should I call?" };
-      }
+      if (!n) return { ok: false, native: false, message: "Who should I call?" };
       openUrl(`tel:${n}`);
       return { ok: true, native: false, message: `Opening dialer for ${n}.` };
     }
     case "sms": {
       const n = String(action.target ?? "").replace(/[^\d+]/g, "");
       const body = encodeURIComponent(String(action.extra ?? action.value ?? ""));
-      if (!n) {
-        return { ok: false, native: false, message: "Who should I text?" };
-      }
+      if (!n) return { ok: false, native: false, message: "Who should I text?" };
       openUrl(`sms:${n}?body=${body}`);
       return { ok: true, native: false, message: `Opening messages to ${n}.` };
     }
@@ -329,15 +372,9 @@ async function runWebAction(action: PhoneAction): Promise<ActionResult> {
       openUrl(
         intentUrl(
           "android.intent.action.SET_ALARM",
-          `S.android.intent.extra.alarm.HOUR=${hour};S.android.intent.extra.alarm.MINUTES=${minute};S.android.intent.extra.alarm.MESSAGE=${encodeURIComponent(String(action.extra ?? "Aether"))};`,
+          `S.android.intent.extra.alarm.HOUR=${hour};S.android.intent.extra.alarm.MINUTES=${minute};S.android.intent.extra.alarm.MESSAGE=${encodeURIComponent(String(action.extra ?? "Eta"))};`,
         ),
       );
-      useAether
-        .getState()
-        .addReminder(
-          action.extra ? String(action.extra) : `Alarm ${hour}:${String(minute).padStart(2, "0")}`,
-          Date.now() + 60 * 1000,
-        );
       return {
         ok: true,
         native: false,
@@ -346,32 +383,10 @@ async function runWebAction(action: PhoneAction): Promise<ActionResult> {
     }
     case "timer": {
       const seconds = parseTimerSeconds(action.value) ?? 60;
-      return {
-        ok: true,
-        native: false,
-        message: `Timer running for ${seconds} seconds.`,
-      };
+      return { ok: true, native: false, message: `Timer running for ${seconds} seconds.` };
     }
-    case "open_app": {
-      const key = String(action.target ?? action.extra ?? "")
-        .toLowerCase()
-        .trim();
-      const hit =
-        APP_ALIASES[key] ??
-        Object.entries(APP_ALIASES).find(([name]) => key.includes(name))?.[1];
-      if (hit?.web) openUrl(hit.web);
-      else if (hit?.intent) openUrl(intentUrl(hit.intent));
-      else if (hit?.pkg) {
-        openUrl(`intent://#Intent;package=${hit.pkg};end`);
-      } else {
-        return {
-          ok: false,
-          native: false,
-          message: `I don't have a shortcut for ${key || "that app"} yet.`,
-        };
-      }
-      return { ok: true, native: false, message: `Opening ${key}.` };
-    }
+    case "open_app":
+      return launchAnyApp(String(action.target ?? action.extra ?? ""));
     case "camera": {
       openUrl(intentUrl("android.media.action.STILL_IMAGE_CAMERA"));
       return { ok: true, native: false, message: "Camera ready." };
@@ -382,22 +397,32 @@ async function runWebAction(action: PhoneAction): Promise<ActionResult> {
       return {
         ok: false,
         native: false,
-        message: `I can only ${action.action} the phone from the Aether app with Accessibility turned on.`,
+        message: `I can only ${action.action} the phone from the Eta app with Accessibility turned on.`,
       };
     case "wifi":
       openUrl(intentUrl("android.settings.WIFI_SETTINGS"));
       return { ok: true, native: false, message: "Opening Wi-Fi settings." };
     case "bluetooth":
       openUrl(intentUrl("android.settings.BLUETOOTH_SETTINGS"));
-      return {
-        ok: true,
-        native: false,
-        message: "Opening Bluetooth settings.",
-      };
+      return { ok: true, native: false, message: "Opening Bluetooth settings." };
     case "navigate": {
       const q = encodeURIComponent(String(action.target ?? action.extra ?? ""));
+      if (!q) return { ok: false, native: false, message: "Where should I navigate to?" };
       openUrl(`https://maps.google.com/?q=${q}`);
       return { ok: true, native: false, message: `Navigating to ${action.target}.` };
+    }
+    case "search_web": {
+      const q = encodeURIComponent(String(action.target ?? action.extra ?? action.value ?? ""));
+      if (!q) return { ok: false, native: false, message: "What should I search for?" };
+      openUrl(`https://www.google.com/search?q=${q}`);
+      return { ok: true, native: false, message: `Searching the web for that.` };
+    }
+    case "open_url": {
+      let url = String(action.target ?? action.extra ?? action.value ?? "").trim();
+      if (!url) return { ok: false, native: false, message: "Which website?" };
+      if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+      openUrl(url);
+      return { ok: true, native: false, message: `Opening ${url}.` };
     }
     default:
       return { ok: false, native: false, message: "I can't do that yet." };
@@ -407,9 +432,7 @@ async function runWebAction(action: PhoneAction): Promise<ActionResult> {
 export async function runPhoneActions(
   actions: PhoneAction[],
   opts: {
-    /** Return false to skip whatever hasn't run yet (the user pressed Stop). */
     shouldContinue?: () => boolean;
-    /** Called just before each action runs. */
     onAction?: (action: PhoneAction) => void;
   } = {},
 ) {
