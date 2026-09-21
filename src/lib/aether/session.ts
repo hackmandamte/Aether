@@ -1,23 +1,17 @@
 import { getAccessCode } from "./access";
-import { askAether, hearAether, speakAether, toChatPayload } from "./ai";
+import { askAether, hearAether, toChatPayload } from "./ai";
 import { getNativeAccessCode, runPhoneActions } from "./native";
 import { createVad } from "./silence";
 import { useAether } from "./store";
 import type { PhoneAction } from "./types";
 import {
-  base64ToAudioUrl,
   blobToBase64,
   pickRecorderMime,
-  playAudioUrl,
   speakWithDevice,
   stopAudio,
   stopDeviceVoice,
 } from "./voice";
 
-/**
- * One "run" = one turn: listen -> transcribe -> think -> act -> speak.
- * Pressing Stop bumps runId, so anything still in flight notices it is stale and quietly drops its result.
- */
 let runId = 0;
 
 let recorder: MediaRecorder | null = null;
@@ -26,9 +20,6 @@ let stream: MediaStream | null = null;
 let audioCtx: AudioContext | null = null;
 let vadTimer: number | null = null;
 let hardTimer: number | null = null;
-let playingUrl: string | null = null;
-// Flips to false once the server says it has no voice, so we stop asking every turn.
-let serverVoice = true;
 
 const OFFLINE = "Couldn't reach Eta. Check your connection.";
 const DIDNT_HEAR = "I didn't hear anything. Tap the mic and try again.";
@@ -40,20 +31,14 @@ function timeGreeting(): string {
   return "Good evening";
 }
 
-// ---------------------------------------------------------------------------
-// Small helpers
-// ---------------------------------------------------------------------------
-
 function store() {
   return useAether.getState();
 }
 
-/** Add a line to the live "what I'm doing" list. */
 function step(text: string) {
   store().pushStep(text);
 }
 
-/** Back to idle with a message the user can read. */
 function fail(message: string) {
   const s = store();
   s.setSteps([]);
@@ -61,7 +46,6 @@ function fail(message: string) {
   s.setError(message);
 }
 
-/** The app's built-in code if there is one, otherwise whatever was typed into Settings. */
 async function accessCode(): Promise<string> {
   return (await getNativeAccessCode()) || getAccessCode();
 }
@@ -71,10 +55,6 @@ function actionLabel(a: PhoneAction): string {
   const detail = a.target ?? a.value;
   return detail ? `${name} (${String(detail).slice(0, 40)})` : name;
 }
-
-// ---------------------------------------------------------------------------
-// Microphone
-// ---------------------------------------------------------------------------
 
 function stopVad() {
   if (vadTimer !== null) window.clearInterval(vadTimer);
@@ -92,7 +72,6 @@ function stopStream() {
   stream = null;
 }
 
-/** Throw the current recording away and release the microphone. */
 function teardownRecorder() {
   stopVad();
   try {
@@ -122,7 +101,6 @@ function stopRecorder(): Promise<Blob | null> {
   });
 }
 
-/** Watch the mic level; send automatically once the user stops talking. */
 function watchForSilence(id: number, ctx: AudioContext | null) {
   hardTimer = window.setTimeout(() => void finishListening(id), 22_000);
   if (!ctx || !stream) return;
@@ -175,11 +153,6 @@ function micErrorMessage(err: unknown): string {
   return "Couldn't open the microphone.";
 }
 
-// ---------------------------------------------------------------------------
-// Public controls
-// ---------------------------------------------------------------------------
-
-/** Tap mic: start listening, or (while listening) send now, or (while busy) stop. */
 export async function tapOrb() {
   const { listen } = store();
   if (listen === "idle") return startListening();
@@ -187,7 +160,6 @@ export async function tapOrb() {
   stopEverything();
 }
 
-/** Stop: cancels listening, thinking, pending actions and speech. */
 export function stopEverything() {
   runId += 1;
   teardownRecorder();
@@ -326,7 +298,9 @@ async function runTurn(text: string, id: number) {
 
   let spoken = reply.text;
   if (reply.actions.length) {
-    step(`Working out ${reply.actions.length === 1 ? "an action" : `${reply.actions.length} actions`} on the phone`);
+    step(
+      `Working out ${reply.actions.length === 1 ? "an action" : `${reply.actions.length} actions`} on the phone`,
+    );
     const results = await runPhoneActions(reply.actions, {
       shouldContinue: () => id === runId,
       onAction: (a) => step(`Doing: ${actionLabel(a)}`),
@@ -353,7 +327,6 @@ function buildGreeting(): string {
   return `${timeGreeting()}. I'm Eta, your personal mobile assistant. How can I help?`;
 }
 
-/** First launch: time-aware hello, spoken once. */
 export async function greetOnce() {
   const s = store();
   if (s.settings.onboarded || s.listen !== "idle") return;
@@ -363,38 +336,17 @@ export async function greetOnce() {
   await speak(line, ++runId);
 }
 
+/** Always use the phone's built-in text-to-speech (free, offline, no server voice). */
 export async function speak(text: string, id: number = ++runId) {
   const s = store();
   s.setListen("speaking");
   step("Speaking");
   const vol = Math.max(0.2, s.device.volume / 15);
   try {
-    if (serverVoice) {
-      const voice = await speakAether({
-        data: {
-          accessCode: await accessCode(),
-          text,
-          voice: s.settings.voice,
-          language: s.settings.language,
-        },
-      });
-      if (id !== runId) return;
-      if (voice.ok) {
-        if (playingUrl) URL.revokeObjectURL(playingUrl);
-        playingUrl = base64ToAudioUrl(voice.audioBase64, voice.mimeType);
-        await playAudioUrl(playingUrl, vol);
-        return;
-      }
-      if ("device" in voice && voice.device) serverVoice = false;
-    }
     if (id !== runId) return;
     await speakWithDevice(text, s.settings.language, vol);
   } catch {
-    try {
-      if (id === runId) await speakWithDevice(text, s.settings.language, vol);
-    } catch {
-      /* ignore */
-    }
+    /* text is already on screen */
   } finally {
     if (id === runId) {
       store().setSteps([]);
