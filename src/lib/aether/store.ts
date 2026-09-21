@@ -6,7 +6,6 @@ import type {
   NoteItem,
   PhoneAction,
   ReminderItem,
-  TabId,
   TimerItem,
   VoiceId,
 } from "./types";
@@ -30,7 +29,7 @@ type Device = {
 type AetherState = {
   settings: Settings;
   device: Device;
-  tab: TabId;
+  drawerOpen: boolean;
   listen: ListenMode;
   messages: ChatMessage[];
   notes: NoteItem[];
@@ -38,9 +37,8 @@ type AetherState = {
   timers: TimerItem[];
   lastAction: string | null;
   error: string | null;
-  /** What Aether is doing right now, step by step. Cleared when it goes idle. */
   steps: string[];
-  setTab: (tab: TabId) => void;
+  setDrawerOpen: (open: boolean) => void;
   setListen: (listen: ListenMode) => void;
   setVoice: (voice: VoiceId) => void;
   setLanguage: (language: LanguageId) => void;
@@ -48,6 +46,7 @@ type AetherState = {
   setOnboarded: () => void;
   patchDevice: (patch: Partial<Device>) => void;
   addMessage: (msg: ChatMessage) => void;
+  clearMessages: () => void;
   addNote: (text: string) => NoteItem;
   addReminder: (text: string, when: number) => ReminderItem;
   addTimer: (label: string, seconds: number) => TimerItem;
@@ -61,7 +60,7 @@ type AetherState = {
   rememberActions: (actions: PhoneAction[]) => void;
 };
 
-const MAX_MESSAGES = 24;
+const MAX_MESSAGES = 48;
 
 export const useAether = create<AetherState>()(
   persist(
@@ -78,7 +77,7 @@ export const useAether = create<AetherState>()(
         brightness: 70,
         cameraOpen: false,
       },
-      tab: "assist",
+      drawerOpen: false,
       listen: "idle",
       messages: [],
       notes: [],
@@ -87,7 +86,7 @@ export const useAether = create<AetherState>()(
       lastAction: null,
       error: null,
       steps: [],
-      setTab: (tab) => set({ tab }),
+      setDrawerOpen: (drawerOpen) => set({ drawerOpen }),
       setListen: (listen) => set({ listen }),
       setVoice: (voice) =>
         set((s) => ({ settings: { ...s.settings, voice } })),
@@ -103,6 +102,7 @@ export const useAether = create<AetherState>()(
         set((s) => ({
           messages: [...s.messages, msg].slice(-MAX_MESSAGES),
         })),
+      clearMessages: () => set({ messages: [], error: null, steps: [] }),
       addNote: (text) => {
         const item: NoteItem = {
           id: crypto.randomUUID(),
@@ -150,7 +150,7 @@ export const useAether = create<AetherState>()(
       rememberActions: () => undefined,
     }),
     {
-      name: "aether-v1",
+      name: "aether-v2",
       storage: createJSONStorage(() => {
         if (typeof window === "undefined") {
           return {
@@ -169,7 +169,7 @@ export const useAether = create<AetherState>()(
           brightness: s.device.brightness,
           cameraOpen: false,
         },
-        messages: s.messages.slice(-16),
+        messages: s.messages.slice(-24),
         notes: s.notes,
         reminders: s.reminders,
       }),
