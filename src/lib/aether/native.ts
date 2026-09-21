@@ -404,9 +404,19 @@ async function runWebAction(action: PhoneAction): Promise<ActionResult> {
   }
 }
 
-export async function runPhoneActions(actions: PhoneAction[]) {
+export async function runPhoneActions(
+  actions: PhoneAction[],
+  opts: {
+    /** Return false to skip whatever hasn't run yet (the user pressed Stop). */
+    shouldContinue?: () => boolean;
+    /** Called just before each action runs. */
+    onAction?: (action: PhoneAction) => void;
+  } = {},
+) {
   const results: ActionResult[] = [];
   for (const action of actions.slice(0, 4)) {
+    if (opts.shouldContinue && !opts.shouldContinue()) break;
+    opts.onAction?.(action);
     results.push(await runPhoneAction(action));
   }
   return results;

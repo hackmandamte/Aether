@@ -1,42 +1,35 @@
-import { Mic } from "lucide-react";
+import { Mic, Square } from "lucide-react";
 import { useAether } from "@/lib/aether/store";
 import { cn } from "@/lib/utils";
 
-export function Orb({
-  onHoldStart,
-  onHoldEnd,
-}: {
-  onHoldStart: () => void;
-  onHoldEnd: () => void;
-}) {
+export function Orb({ onTap, onStop }: { onTap: () => void; onStop: () => void }) {
   const listen = useAether((s) => s.listen);
+  const steps = useAether((s) => s.steps);
+  const busy = listen !== "idle";
 
   const label =
     listen === "recording"
-      ? "Listening"
+      ? "Listening. Tap when you're done"
       : listen === "thinking"
         ? "Thinking"
         : listen === "speaking"
           ? "Speaking"
-          : "Hold to speak";
+          : "Tap to speak";
+
+  // The newest step tells the user exactly what is happening right now.
+  const detail = busy ? steps[steps.length - 1] : null;
 
   return (
     <div className="flex flex-col items-center gap-4">
       <button
         type="button"
         aria-label={label}
-        onPointerDown={(e) => {
-          e.preventDefault();
-          (e.currentTarget as HTMLButtonElement).setPointerCapture(e.pointerId);
-          onHoldStart();
-        }}
-        onPointerUp={onHoldEnd}
-        onPointerCancel={onHoldEnd}
+        onClick={onTap}
         onContextMenu={(e) => e.preventDefault()}
         className={cn(
-          "relative grid size-[7.5rem] place-items-center rounded-full",
+          "relative grid size-[7.5rem] touch-manipulation select-none place-items-center rounded-full",
           "bg-elevated shadow-[var(--shadow-border)]",
-          "transition-[scale,box-shadow] duration-150 ease-out",
+          "transition-[scale,box-shadow] duration-150 ease-out active:scale-[0.97]",
           "focus-visible:ring-2 focus-visible:ring-ring/70",
           listen === "recording" && "scale-[1.03]",
         )}
@@ -80,7 +73,25 @@ export function Orb({
           )}
         </span>
       </button>
-      <p className="text-sm text-muted tabular-nums">{label}</p>
+
+      <p className="text-sm text-muted">{label}</p>
+      {detail ? (
+        <p className="max-w-[16rem] text-center text-xs text-faint" aria-live="polite">
+          {detail}
+        </p>
+      ) : null}
+
+      {busy ? (
+        <button
+          type="button"
+          onClick={onStop}
+          className="flex h-11 items-center gap-2 rounded-full bg-danger/10 px-5 text-sm font-medium text-danger active:scale-[0.97]"
+          aria-label="Stop"
+        >
+          <Square className="size-3.5 fill-current" />
+          Stop
+        </button>
+      ) : null}
     </div>
   );
 }

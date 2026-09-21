@@ -5,7 +5,7 @@ import {
   Settings2,
   StickyNote,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Composer } from "./composer";
 import { DevicePanel } from "./device-panel";
 import { InstallPanel } from "./install-panel";
@@ -13,12 +13,7 @@ import { NotesPanel } from "./notes-panel";
 import { Orb } from "./orb";
 import { Transcript } from "./transcript";
 import { isNativeBridge } from "@/lib/aether/native";
-import {
-  cancelRecording,
-  finishRecordingAndReply,
-  greetOnce,
-  startRecording,
-} from "@/lib/aether/session";
+import { greetOnce, stopEverything, tapOrb } from "@/lib/aether/session";
 import { useAether } from "@/lib/aether/store";
 import { formatClock } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -34,11 +29,9 @@ const TABS: { id: TabId; label: string; icon: typeof MessageCircle }[] = [
 export function AetherShell() {
   const tab = useAether((s) => s.tab);
   const setTab = useAether((s) => s.setTab);
-  const listen = useAether((s) => s.listen);
   const device = useAether((s) => s.device);
   const settings = useAether((s) => s.settings);
   const setOnboarded = useAether((s) => s.setOnboarded);
-  const holding = useRef(false);
   const [clock, setClock] = useState("--:--");
   const [mounted, setMounted] = useState(false);
   const [inApp, setInApp] = useState(false);
@@ -57,58 +50,22 @@ export function AetherShell() {
     if (mounted && inApp && !settings.onboarded) void greetOnce();
   }, [mounted, inApp, settings.onboarded]);
 
-  const onHoldStart = useCallback(() => {
-    if (listen !== "idle") return;
-    holding.current = true;
-    void startRecording().catch((err: unknown) => {
-      holding.current = false;
-      const message =
-        err instanceof Error ? err.message : "Microphone is blocked.";
-      useAether.getState().setError(message);
-      useAether.getState().setListen("idle");
-    });
-  }, [listen]);
-
-  const onHoldEnd = useCallback(() => {
-    if (!holding.current) return;
-    holding.current = false;
-    void finishRecordingAndReply();
-  }, []);
-
+  // Leaving the screen stops anything still running.
   useEffect(() => {
-    return () => {
-      void cancelRecording();
-    };
+    return () => stopEverything();
   }, []);
 
+  // Space on a computer taps the disc.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== "Space" || e.repeat) return;
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-        return;
-      }
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       e.preventDefault();
-      if (e.type === "keydown") onHoldStart();
-      else onHoldEnd();
+      void tapOrb();
     };
     window.addEventListener("keydown", onKey);
-    window.addEventListener("keyup", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("keyup", onKey);
-    };
-  }, [onHoldStart, onHoldEnd]);
-
-  useEffect(() => {
-    if (listen !== "recording") return;
-    const id = window.setTimeout(() => {
-      if (holding.current) {
-        holding.current = false;
-        void finishRecordingAndReply();
-      }
-    }, 20_000);
-    return () => window.clearTimeout(id);
-  }, [listen]);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   return (
     <div className="relative mx-auto flex min-h-dvh w-full max-w-md flex-col bg-bg px-4 pb-[5.5rem] pt-[env(safe-area-inset-top)] md:max-w-3xl">
@@ -134,7 +91,7 @@ export function AetherShell() {
       {mounted && !inApp && !settings.onboarded ? (
         <div className="mb-3 rounded-[20px] bg-elevated p-4 shadow-[var(--shadow-border)]">
           <p className="text-sm leading-relaxed">
-            Hold the silver disc and speak. Spacebar works on a computer.
+            Tap the silver disc and speak. It sends when you go quiet. Spacebar works on a computer.
             Install the APK on the Infinix to replace Gemini on the Home
             button.
           </p>
@@ -153,7 +110,7 @@ export function AetherShell() {
           <div className="flex min-h-0 flex-1 flex-col md:grid md:grid-cols-[minmax(0,1fr)_17rem] md:gap-8">
             <Transcript />
             <div className="flex flex-col items-center gap-5 py-4 md:justify-center">
-              <Orb onHoldStart={onHoldStart} onHoldEnd={onHoldEnd} />
+              <Orb onTap={() => void tapOrb()} onStop={stopEverything} />
               <Composer />
             </div>
           </div>

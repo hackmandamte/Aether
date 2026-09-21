@@ -55,6 +55,8 @@ export type ChatMessage = {
   text: string;
   at: number;
   actions?: PhoneAction[];
+  /** The steps Aether went through for this reply, shown under it. */
+  trace?: string[];
 };
 
 export type NoteItem = {

@@ -38,6 +38,8 @@ type AetherState = {
   timers: TimerItem[];
   lastAction: string | null;
   error: string | null;
+  /** What Aether is doing right now, step by step. Cleared when it goes idle. */
+  steps: string[];
   setTab: (tab: TabId) => void;
   setListen: (listen: ListenMode) => void;
   setVoice: (voice: VoiceId) => void;
@@ -54,6 +56,8 @@ type AetherState = {
   deleteNote: (id: string) => void;
   setLastAction: (text: string | null) => void;
   setError: (error: string | null) => void;
+  setSteps: (steps: string[]) => void;
+  pushStep: (step: string) => void;
   rememberActions: (actions: PhoneAction[]) => void;
 };
 
@@ -82,6 +86,7 @@ export const useAether = create<AetherState>()(
       timers: [],
       lastAction: null,
       error: null,
+      steps: [],
       setTab: (tab) => set({ tab }),
       setListen: (listen) => set({ listen }),
       setVoice: (voice) =>
@@ -140,6 +145,8 @@ export const useAether = create<AetherState>()(
         set((s) => ({ notes: s.notes.filter((n) => n.id !== id) })),
       setLastAction: (lastAction) => set({ lastAction }),
       setError: (error) => set({ error }),
+      setSteps: (steps) => set({ steps }),
+      pushStep: (step) => set((s) => ({ steps: [...s.steps, step].slice(-8) })),
       rememberActions: () => undefined,
     }),
     {

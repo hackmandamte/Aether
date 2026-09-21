@@ -27,14 +27,36 @@ export function pickRecorderMime() {
   return candidates.find((c) => MediaRecorder.isTypeSupported(c)) ?? "";
 }
 
+let currentAudio: HTMLAudioElement | null = null;
+
 export async function playAudioUrl(url: string, volume = 0.85) {
+  stopAudio();
   const audio = new Audio(url);
   audio.volume = Math.min(1, Math.max(0.15, volume));
-  await audio.play();
-  await new Promise<void>((resolve, reject) => {
-    audio.onended = () => resolve();
-    audio.onerror = () => reject(new Error("Playback failed"));
-  });
+  currentAudio = audio;
+  try {
+    await audio.play();
+    await new Promise<void>((resolve, reject) => {
+      audio.onended = () => resolve();
+      // Fires when stopAudio() pauses it, so a Stop press releases the caller at once.
+      audio.onpause = () => resolve();
+      audio.onerror = () => reject(new Error("Playback failed"));
+    });
+  } finally {
+    if (currentAudio === audio) currentAudio = null;
+  }
+}
+
+/** Cut off any voice clip that is playing. */
+export function stopAudio() {
+  const audio = currentAudio;
+  currentAudio = null;
+  if (audio) audio.pause();
+}
+
+/** Cut off the phone's built-in voice. */
+export function stopDeviceVoice() {
+  if (hasDeviceVoice()) window.speechSynthesis.cancel();
 }
 
 const DEVICE_LANG: Record<string, string> = {
