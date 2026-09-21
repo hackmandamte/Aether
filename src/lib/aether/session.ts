@@ -306,8 +306,17 @@ async function runTurn(text: string, id: number) {
       onAction: (a) => step(`Doing: ${actionLabel(a)}`),
     });
     if (id !== runId) return;
-    const failed = results.filter((r) => !r.ok).map((r) => r.message);
-    if (failed.length) spoken = `${spoken} ${failed.join(" ")}`;
+
+    // Prefer what the phone actually reported — never leave a false "Flashlight on" standing alone
+    const okMsgs = results.filter((r) => r.ok).map((r) => r.message);
+    const failMsgs = results.filter((r) => !r.ok).map((r) => r.message);
+    if (okMsgs.length && !failMsgs.length) {
+      spoken = okMsgs.join(" ");
+    } else if (failMsgs.length && !okMsgs.length) {
+      spoken = failMsgs.join(" ");
+    } else if (okMsgs.length || failMsgs.length) {
+      spoken = [...okMsgs, ...failMsgs].join(" ");
+    }
   }
 
   step("Answering");
