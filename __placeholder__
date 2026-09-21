@@ -1,0 +1,4 @@
+function stopStream() {
+  stream?.getTracks().forEach((t) => t.stop());
+  stream = null;
+}

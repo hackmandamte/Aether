@@ -20,66 +20,16 @@ export const LANGUAGES = [
 
 export type LanguageId = (typeof LANGUAGES)[number]["id"];
 
-export type TabId = "assist" | "device" | "notes" | "install";
+export type TabId = "assist" | "device" | "notes" | "settings";
 
 export type PhoneActionName =
-  | "flashlight_on"
-  | "flashlight_off"
-  | "volume"
-  | "brightness"
-  | "call"
-  | "sms"
-  | "alarm"
-  | "timer"
-  | "open_app"
-  | "camera"
-  | "note"
-  | "reminder"
-  | "lock"
-  | "home"
-  | "back"
-  | "wifi"
-  | "bluetooth"
-  | "navigate";
+  | "flashlight_on" | "flashlight_off" | "volume" | "brightness" | "call" | "sms"
+  | "alarm" | "timer" | "open_app" | "camera" | "note" | "reminder" | "lock"
+  | "home" | "back" | "wifi" | "bluetooth" | "navigate";
 
-export type PhoneAction = {
-  action: PhoneActionName;
-  value?: string | number;
-  target?: string;
-  extra?: string;
-};
-
-export type ChatMessage = {
-  id: string;
-  role: "user" | "assistant" | "system";
-  text: string;
-  at: number;
-  actions?: PhoneAction[];
-};
-
-export type NoteItem = {
-  id: string;
-  text: string;
-  at: number;
-};
-
-export type ReminderItem = {
-  id: string;
-  text: string;
-  at: number;
-  when: number;
-  done: boolean;
-};
-
-export type TimerItem = {
-  id: string;
-  label: string;
-  endsAt: number;
-  seconds: number;
-};
-
-export type ActionResult = {
-  ok: boolean;
-  message: string;
-  native: boolean;
-};
+export type PhoneAction = { action: PhoneActionName; value?: string | number; target?: string; extra?: string };
+export type ChatMessage = { id: string; role: "user" | "assistant" | "system"; text: string; at: number; actions?: PhoneAction[] };
+export type NoteItem = { id: string; text: string; at: number };
+export type ReminderItem = { id: string; text: string; at: number; when: number; done: boolean };
+export type TimerItem = { id: string; label: string; endsAt: number; seconds: number };
+export type ActionResult = { ok: boolean; message: string; native: boolean };
