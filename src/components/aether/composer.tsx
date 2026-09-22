@@ -59,7 +59,13 @@ function pickSuggestions(count = 4): Suggestion[] {
   return pool.slice(0, count);
 }
 
-export function Composer({ showActions = false }: { showActions?: boolean }) {
+export function Composer({
+  showActions = false,
+  onKeyboard,
+}: {
+  showActions?: boolean;
+  onKeyboard?: (open: boolean) => void;
+}) {
   const [value, setValue] = useState("");
   const [suggestions] = useState(() => pickSuggestions(4));
   const listen = useAether((s) => s.listen);
@@ -141,6 +147,8 @@ export function Composer({ showActions = false }: { showActions?: boolean }) {
           value={value}
           disabled={busy}
           placeholder="What do you want to do?"
+          onFocus={() => onKeyboard?.(true)}
+          onBlur={() => onKeyboard?.(false)}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
