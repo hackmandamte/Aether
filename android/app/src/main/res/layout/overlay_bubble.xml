@@ -2,8 +2,8 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="56dp"
     android:layout_height="56dp"
-    android:background="#2A6BFF"
-    android:elevation="10dp">
+    android:background="#B32A6BFF"
+    android:elevation="8dp">
 
     <TextView
         android:id="@+id/bubble_label"
@@ -11,7 +11,7 @@
         android:layout_height="match_parent"
         android:gravity="center"
         android:text="Eta"
-        android:textColor="#FFFFFF"
+        android:textColor="#FFFFFFFF"
         android:textStyle="bold"
         android:textSize="14sp" />
 </FrameLayout>
