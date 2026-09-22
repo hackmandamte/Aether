@@ -1,24 +1,4 @@
-import {
-  AtSign,
-  Camera,
-  Clock,
-  Flashlight,
-  Globe,
-  Image,
-  MapPin,
-  MessageCircle,
-  Music,
-  Play,
-  Search,
-  Settings,
-  Sun,
-  Timer,
-  Users,
-  Volume2,
-  type LucideIcon,
-} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { sendText } from "@/lib/aether/session";
 import { useAether } from "@/lib/aether/store";
 import { cn } from "@/lib/utils";
 
@@ -29,54 +9,13 @@ function timeGreeting(): string {
   return "Good evening";
 }
 
-type Suggestion = {
-  text: string;
-  icon: LucideIcon;
-};
-
-const SUGGESTION_POOL: Suggestion[] = [
-  { text: "Turn on the flashlight", icon: Flashlight },
-  { text: "Turn off the flashlight", icon: Flashlight },
-  { text: "Open WhatsApp", icon: MessageCircle },
-  { text: "Open Instagram", icon: Image },
-  { text: "Open Facebook", icon: Users },
-  { text: "Open YouTube", icon: Play },
-  { text: "Open Twitter", icon: AtSign },
-  { text: "Open Chrome", icon: Globe },
-  { text: "Open Maps", icon: MapPin },
-  { text: "Open Settings", icon: Settings },
-  { text: "Open the camera", icon: Camera },
-  { text: "Open Spotify", icon: Music },
-  { text: "Where am I?", icon: MapPin },
-  { text: "Search the web for weather", icon: Search },
-  { text: "Search the web for news", icon: Globe },
-  { text: "Set a timer for five minutes", icon: Timer },
-  { text: "Set an alarm for 7 AM", icon: Clock },
-  { text: "Brightness to 50 percent", icon: Sun },
-  { text: "Volume to 10", icon: Volume2 },
-  { text: "Open Wi-Fi settings", icon: Settings },
-];
-
-/** Fresh random 4 every time the welcome screen mounts (each app open / new chat). */
-function pickSuggestions(count = 4): Suggestion[] {
-  const pool = [...SUGGESTION_POOL];
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
-  }
-  return pool.slice(0, count);
-}
-
-export function Transcript() {
+export function Transcript({ compact = false }: { compact?: boolean }) {
   const messages = useAether((s) => s.messages);
   const error = useAether((s) => s.error);
   const steps = useAether((s) => s.steps);
   const listen = useAether((s) => s.listen);
   const bottom = useRef<HTMLDivElement>(null);
   const [greeting] = useState(timeGreeting);
-  // New shuffle every mount — opening the app or clearing chat refreshes the set
-  const [suggestions] = useState(() => pickSuggestions(4));
-  const busy = listen !== "idle";
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -84,49 +23,45 @@ export function Transcript() {
 
   if (!messages.length && !error && !steps.length) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center px-6 py-10 animate-[eta-fade-in_0.55s_ease-out]">
-        <div className="relative mb-8 grid size-28 place-items-center">
-          <span className="absolute inset-0 rounded-full bg-accent/10 animate-[eta-pulse_3s_ease-in-out_infinite]" />
-          <span className="absolute inset-3 rounded-full bg-accent/15 animate-[eta-pulse_3s_ease-in-out_0.4s_infinite]" />
-          <span className="relative size-16 rounded-full bg-gradient-to-br from-[#e8ecf2] to-[#9aa3b2] shadow-[0_0_40px_rgba(215,221,230,0.25)]" />
+      <div
+        className={cn(
+          "flex flex-1 flex-col px-6 transition-[justify-content,padding] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
+          compact ? "justify-start pb-2 pt-1" : "justify-center py-8",
+        )}
+      >
+        <div
+          className={cn(
+            "mx-auto w-full max-w-lg text-center transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
+            compact ? "origin-top scale-[0.92]" : "scale-100",
+          )}
+        >
+          <p
+            className={cn(
+              "font-display font-semibold tracking-tight text-fg animate-[eta-fade-in_0.7s_ease-out]",
+              compact ? "text-lg sm:text-xl" : "text-[2.15rem] leading-[1.15] sm:text-5xl",
+            )}
+          >
+            {greeting}.
+          </p>
+          <p
+            className={cn(
+              "mt-3 font-display font-semibold tracking-tight text-fg animate-[eta-fade-in_0.85s_ease-out]",
+              compact ? "text-base sm:text-lg" : "text-3xl sm:text-4xl",
+            )}
+          >
+            Hello, I am E.T.A.
+          </p>
+          <p
+            className={cn(
+              "mx-auto mt-3 max-w-sm text-muted animate-[eta-fade-in_1s_ease-out]",
+              compact ? "text-xs" : "text-base leading-relaxed sm:text-lg",
+            )}
+          >
+            Your Everyday Task Assistant.
+            <br />
+            What do you want to do?
+          </p>
         </div>
-
-        <p className="font-display text-2xl font-medium tracking-tight text-fg sm:text-3xl">
-          {greeting}
-        </p>
-        <p className="mt-2 max-w-[17rem] text-center text-sm leading-relaxed text-muted">
-          I'm Eta, your personal mobile assistant. Tap a suggestion, the mic, or type below.
-        </p>
-
-        <ul className="mt-8 w-full max-w-sm space-y-2">
-          {suggestions.map((hint, i) => {
-            const Icon = hint.icon;
-            return (
-              <li
-                key={`${hint.text}-${i}`}
-                className="animate-[eta-fade-in_0.5s_ease-out]"
-                style={{ animationDelay: `${0.12 + i * 0.06}s`, animationFillMode: "both" }}
-              >
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void sendText(hint.text)}
-                  className={cn(
-                    "flex w-full items-center gap-3 rounded-2xl border border-border/70 bg-elevated/70 px-4 py-3 text-left text-sm text-muted",
-                    "transition-[background-color,border-color,color,transform] duration-150",
-                    "hover:border-border-strong hover:bg-subtle hover:text-fg active:scale-[0.98]",
-                    "disabled:pointer-events-none disabled:opacity-50",
-                  )}
-                >
-                  <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-subtle text-fg">
-                    <Icon className="size-[1.125rem]" strokeWidth={1.75} aria-hidden />
-                  </span>
-                  <span className="min-w-0 flex-1 font-medium leading-snug">{hint.text}</span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
       </div>
     );
   }

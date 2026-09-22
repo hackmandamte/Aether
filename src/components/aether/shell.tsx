@@ -8,20 +8,36 @@ import { greetOnce, stopEverything, tapOrb } from "@/lib/aether/session";
 import { useAether } from "@/lib/aether/store";
 import { warmUpDeviceVoice } from "@/lib/aether/voice";
 
-function timeGreeting(): string {
-  const h = new Date().getHours();
-  if (h < 12) return "Good morning";
-  if (h < 17) return "Good afternoon";
-  return "Good evening";
+function useKeyboardOpen() {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const check = () => {
+      const covered = window.innerHeight - vv.height;
+      setOpen(covered > 100);
+    };
+    check();
+    vv.addEventListener("resize", check);
+    vv.addEventListener("scroll", check);
+    return () => {
+      vv.removeEventListener("resize", check);
+      vv.removeEventListener("scroll", check);
+    };
+  }, []);
+  return open;
 }
 
 export function AetherShell() {
   const device = useAether((s) => s.device);
   const settings = useAether((s) => s.settings);
+  const messages = useAether((s) => s.messages);
   const setDrawerOpen = useAether((s) => s.setDrawerOpen);
   const setTheme = useAether((s) => s.setTheme);
   const [mounted, setMounted] = useState(false);
   const [inApp, setInApp] = useState(false);
+  const keyboardOpen = useKeyboardOpen();
+  const home = messages.length === 0;
 
   useEffect(() => {
     setMounted(true);
@@ -29,7 +45,6 @@ export function AetherShell() {
     warmUpDeviceVoice();
   }, []);
 
-  // First tap unlocks audio on strict mobile browsers
   useEffect(() => {
     const unlock = () => warmUpDeviceVoice();
     window.addEventListener("pointerdown", unlock, { once: true, passive: true });
@@ -74,7 +89,7 @@ export function AetherShell() {
 
       <Drawer />
 
-      <header className="flex shrink-0 items-center gap-1 border-b border-border/60 px-2 py-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
+      <header className="flex shrink-0 items-center gap-1 px-2 py-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
         <button
           type="button"
           onClick={() => setDrawerOpen(true)}
@@ -83,10 +98,7 @@ export function AetherShell() {
         >
           <Menu className="size-5" strokeWidth={1.75} />
         </button>
-        <div className="min-w-0 flex-1">
-          <p className="truncate font-display text-[15px] font-medium tracking-tight">Eta</p>
-          <p className="truncate text-[11px] text-faint">{timeGreeting()}</p>
-        </div>
+        <div className="min-w-0 flex-1" />
         <button
           type="button"
           onClick={() => setTheme(isLight ? "dark" : "light")}
@@ -102,11 +114,11 @@ export function AetherShell() {
       </header>
 
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <Transcript />
+        <Transcript compact={home && keyboardOpen} />
       </main>
 
-      <div className="shrink-0 border-t border-border/60 bg-bg pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 transition-colors duration-300">
-        <Composer />
+      <div className="shrink-0 bg-bg pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1 transition-colors duration-300">
+        <Composer showActions={home} />
       </div>
     </div>
   );
