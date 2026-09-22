@@ -30,7 +30,11 @@ test("rate limiter window resets", () => {
 test("rate limiter memory stays bounded", () => {
   const rl = createRateLimiter(5, 60_000, 50);
   for (let i = 0; i < 500; i++) rl.take(`ip-${i}`, i);
-  // Oldest keys were evicted, newest are still tracked.
   assert.equal(rl.isLimited("ip-499", 500), false);
   assert.equal(rl.take("ip-499", 500), true);
+});
+
+test("safeEqual is length-independent in outcome for mismatches", () => {
+  assert.equal(safeEqual("a".repeat(16), "b".repeat(32)), false);
+  assert.equal(safeEqual("x".repeat(20), "x".repeat(20)), true);
 });
