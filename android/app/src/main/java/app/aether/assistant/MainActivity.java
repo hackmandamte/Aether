@@ -49,7 +49,7 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
         webView = findViewById(R.id.webview);
         bridge = new AetherBridge(this);
-        tts = new AetherTts(this);
+        try { tts = new AetherTts(this); } catch (Throwable t) { tts = null; }
 
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -118,6 +118,7 @@ public class MainActivity extends AppCompatActivity {
         requestCorePermissions();
         maybeAskAssistantRole();
         loadDestination();
+        maybeStartOverlay(getIntent());
     }
 
     @Override
@@ -131,6 +132,22 @@ public class MainActivity extends AppCompatActivity {
         super.onNewIntent(intent);
         setIntent(intent);
         loadDestination();
+        maybeStartOverlay(intent);
+    }
+
+    private void maybeStartOverlay(Intent intent) {
+        try {
+            Intent svc = new Intent(this, EtaOverlayService.class);
+            if (intent != null) {
+                String action = intent.getAction();
+                if (Intent.ACTION_ASSIST.equals(action) || Intent.ACTION_VOICE_COMMAND.equals(action)
+                        || intent.getBooleanExtra("eta_open_overlay", false)) {
+                    svc.setAction(EtaOverlayService.ACTION_SHOW_PANEL);
+                }
+            }
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(svc);
+            else startService(svc);
+        } catch (Exception ignored) {}
     }
 
     private void installBridge() {
@@ -164,20 +181,19 @@ public class MainActivity extends AppCompatActivity {
                 return new JSONObject().put("id", id).put("result", config).toString();
             }
 
-            // Native system TTS — bypasses broken WebView speechSynthesis
-            if ("speak".equals(type)) {
+            if ("speak".equals(type) && tts != null) {
                 String text = request.optString("text", "");
                 float rate = (float) request.optDouble("rate", 1.0);
                 float pitch = (float) request.optDouble("pitch", 1.0);
                 String language = request.optString("language", "en");
-                boolean ok = tts != null && tts.speak(text, rate, pitch, language);
+                boolean ok = tts.speak(text, rate, pitch, language);
                 return new JSONObject()
                         .put("id", id)
                         .put("result", AetherBridge.result(ok, ok ? "Speaking." : "Could not speak."))
                         .toString();
             }
-            if ("stop_speak".equals(type)) {
-                if (tts != null) tts.stop();
+            if ("stop_speak".equals(type) && tts != null) {
+                tts.stop();
                 return new JSONObject()
                         .put("id", id)
                         .put("result", AetherBridge.result(true, "Stopped."))
