@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Aether</string>
-    <string name="accessibility_description">Aether uses Accessibility to press Home, Back, Recents, and Lock when you ask by voice. Nothing is sent off-device except the commands you speak to Aether.</string>
+    <string name="app_name">E.T.A</string>
+    <string name="app_name_long">E.T.A — Everyday Task Assistant</string>
+    <string name="eta_short">Eta</string>
+    <string name="overlay_listening">Eta is listening…</string>
+    <string name="overlay_hint">Speak or type a command</string>
+    <string name="overlay_notification">Eta is ready over your apps</string>
+    <string name="accessibility_description">E.T.A (Everyday Task Assistant) uses Accessibility to press Home, Back, Recents, and Lock when you ask. Nothing is sent off-device except the commands you give Eta.</string>
 </resources>

@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/overlay_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="14dp"
+    android:background="#F01A1B1E"
+    android:elevation="12dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/overlay_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Eta"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/overlay_dismiss"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:gravity="center"
+            android:text="×"
+            android:textColor="#CCFFFFFF"
+            android:textSize="22sp" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/overlay_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:text="@string/overlay_hint"
+        android:textColor="#B3FFFFFF"
+        android:textSize="13sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <EditText
+            android:id="@+id/overlay_input"
+            android:layout_width="0dp"
+            android:layout_height="44dp"
+            android:layout_weight="1"
+            android:background="#33FFFFFF"
+            android:hint="@string/overlay_hint"
+            android:textColorHint="#66FFFFFF"
+            android:textColor="#FFFFFF"
+            android:paddingLeft="12dp"
+            android:paddingRight="12dp"
+            android:inputType="text"
+            android:imeOptions="actionSend"
+            android:maxLines="2" />
+
+        <TextView
+            android:id="@+id/overlay_mic"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginLeft="8dp"
+            android:gravity="center"
+            android:text="🎤"
+            android:textSize="20sp"
+            android:background="#2A6BFF" />
+
+        <TextView
+            android:id="@+id/overlay_send"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginLeft="6dp"
+            android:gravity="center"
+            android:text="↑"
+            android:textColor="#FFFFFF"
+            android:textSize="20sp"
+            android:background="#3D3F45" />
+    </LinearLayout>
+</LinearLayout>
