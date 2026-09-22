@@ -341,15 +341,9 @@ export async function greetOnce() {
   const s = store();
   if (s.settings.onboarded || s.listen !== "idle") return;
   s.setOnboarded();
-  const line = buildGreeting();
-  s.addMessage({ id: crypto.randomUUID(), role: "assistant", text: line, at: Date.now() });
-  await speak(line, ++runId);
+  await speak(buildGreeting(), ++runId);
 }
 
-/**
- * Speak online first (server synthesizes neural audio — nothing downloaded to the phone).
- * Only if the network TTS fails do we fall back to the phone engine.
- */
 export async function speak(text: string, id: number = ++runId) {
   const s = store();
   s.setListen("speaking");
@@ -361,7 +355,6 @@ export async function speak(text: string, id: number = ++runId) {
   try {
     if (id !== runId) return;
 
-    // Online path — same idea as Jarvis clones: cloud TTS → play MP3
     const remote = await speakAether({
       data: {
         accessCode: await accessCode(),
@@ -387,7 +380,6 @@ export async function speak(text: string, id: number = ++runId) {
       return;
     }
 
-    // Last resort only
     step("Online voice busy, using phone voice");
     await speakWithDevice(text, language, vol, voice);
   } catch {
