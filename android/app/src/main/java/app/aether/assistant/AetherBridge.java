@@ -1,6 +1,7 @@
 package app.aether.assistant;
 
 import android.Manifest;
+import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -27,12 +28,11 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Phone actions via origin-restricted bridge. Honest results only. */
 public class AetherBridge {
     private static final Pattern CLOCK = Pattern.compile("^(\\d{1,2}):(\\d{2})$");
     private static final int MAX_TIMER_SECONDS = 24 * 60 * 60;
     private static final int MAX_SMS_CHARS = 500;
-    private final MainActivity activity;
+    private final Activity activity;
     private static final Map<String, String> APPS = new HashMap<>();
     static {
         APPS.put("whatsapp", "com.whatsapp");
@@ -63,7 +63,7 @@ public class AetherBridge {
         APPS.put("uber", "com.ubercab");
         APPS.put("bolt", "com.bolt.client");
     }
-    public AetherBridge(MainActivity activity) { this.activity = activity; }
+    public AetherBridge(Activity activity) { this.activity = activity; }
     public JSONObject execute(JSONObject obj) {
         try {
             String action = obj.optString("action");
@@ -126,9 +126,6 @@ public class AetherBridge {
         int clamped = Math.max(0, Math.min(15, level));
         int mapped = Math.round(clamped / 15f * max);
         am.setStreamVolume(AudioManager.STREAM_MUSIC, mapped, AudioManager.FLAG_SHOW_UI);
-        try {
-            am.setStreamVolume(AudioManager.STREAM_RING, Math.round(clamped / 15f * am.getStreamMaxVolume(AudioManager.STREAM_RING)), 0);
-        } catch (SecurityException ignored) {}
         return result(true, "Volume " + clamped + " of 15.");
     }
     private JSONObject brightness(int percent) {
@@ -147,7 +144,7 @@ public class AetherBridge {
             i.setData(Uri.parse("package:" + activity.getPackageName()));
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             activity.startActivity(i);
-            return result(true, "Screen dimmed here. Allow modify system settings, then ask again for system-wide brightness.");
+            return result(true, "Allow modify system settings, then ask again.");
         } catch (Exception e) {
             return result(true, "Brightness " + p + " percent for this screen.");
         }
@@ -158,7 +155,7 @@ public class AetherBridge {
         Intent dial = new Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + n));
         dial.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         activity.startActivity(dial);
-        return result(true, "Dialer ready for " + n + ". Tap to call.");
+        return result(true, "Dialer ready for " + n + ".");
     }
     private JSONObject sms(String number, String body) {
         String n = number.replaceAll("[^0-9+]", "");
@@ -167,11 +164,11 @@ public class AetherBridge {
         i.putExtra("sms_body", clip(body, MAX_SMS_CHARS));
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         activity.startActivity(i);
-        return result(true, "Message drafted for " + n + ". Tap send.");
+        return result(true, "Message drafted for " + n + ".");
     }
     private JSONObject openApp(String name) {
         String key = name.toLowerCase(Locale.US).trim();
-        if (key.isEmpty()) return result(false, "Which app should I open?");
+        if (key.isEmpty()) return result(false, "Which app?");
         PackageManager pm = activity.getPackageManager();
         String pkg = APPS.get(key);
         if (pkg == null) {
@@ -197,7 +194,6 @@ public class AetherBridge {
             }
             if (bestPkg != null) pkg = bestPkg;
         }
-        if (pkg == null && key.contains(".")) pkg = key;
         if (pkg != null) {
             Intent launch = pm.getLaunchIntentForPackage(pkg);
             if (launch != null) {
@@ -206,21 +202,7 @@ public class AetherBridge {
                 return result(true, "Opening " + name + ".");
             }
         }
-        Intent market = new Intent(Intent.ACTION_VIEW, Uri.parse("market://search?q=" + Uri.encode(name) + "&c=apps"));
-        market.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        try {
-            activity.startActivity(market);
-            return result(true, "Couldn't find " + name + " installed. Opened Play Store search.");
-        } catch (Exception e) {
-            Intent web = new Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/search?q=" + Uri.encode(name) + "&c=apps"));
-            web.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            try {
-                activity.startActivity(web);
-                return result(true, "Couldn't find " + name + " installed. Opened Play Store search.");
-            } catch (Exception e2) {
-                return result(false, "Couldn't open " + name + ".");
-            }
-        }
+        return result(false, "Couldn't open " + name + ".");
     }
     private JSONObject camera() {
         Intent i = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
@@ -230,20 +212,17 @@ public class AetherBridge {
     }
     private JSONObject alarm(String time, String label) {
         Matcher m = CLOCK.matcher(time.trim());
-        if (!m.matches()) return result(false, "What time should I set the alarm for?");
+        if (!m.matches()) return result(false, "What time?");
         int hour = Integer.parseInt(m.group(1));
         int minute = Integer.parseInt(m.group(2));
-        if (hour > 23 || minute > 59) return result(false, "That isn't a valid time.");
         Intent i = new Intent(AlarmClock.ACTION_SET_ALARM);
         i.putExtra(AlarmClock.EXTRA_HOUR, hour);
         i.putExtra(AlarmClock.EXTRA_MINUTES, minute);
         i.putExtra(AlarmClock.EXTRA_MESSAGE, label.isEmpty() ? "Eta" : label);
         i.putExtra(AlarmClock.EXTRA_SKIP_UI, true);
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        try {
-            activity.startActivity(i);
-            return result(true, String.format(Locale.US, "Alarm %02d:%02d.", hour, minute));
-        } catch (Exception e) { return result(false, "Couldn't set the alarm."); }
+        try { activity.startActivity(i); return result(true, String.format(Locale.US, "Alarm %02d:%02d.", hour, minute)); }
+        catch (Exception e) { return result(false, "Couldn't set the alarm."); }
     }
     private JSONObject timer(int seconds, String label) {
         Intent i = new Intent(AlarmClock.ACTION_SET_TIMER);
@@ -255,7 +234,7 @@ public class AetherBridge {
         catch (Exception e) { return result(false, "Couldn't start the timer."); }
     }
     private JSONObject navigate(String target) {
-        if (target == null || target.trim().isEmpty()) return result(false, "Where should I navigate to?");
+        if (target == null || target.trim().isEmpty()) return result(false, "Where?");
         Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=" + Uri.encode(target)));
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         try { activity.startActivity(i); return result(true, "Navigating to " + target + "."); }
@@ -263,38 +242,28 @@ public class AetherBridge {
             Intent web = new Intent(Intent.ACTION_VIEW, Uri.parse("https://maps.google.com/?q=" + Uri.encode(target)));
             web.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             activity.startActivity(web);
-            return result(true, "Opening maps for " + target + ".");
+            return result(true, "Opening maps.");
         }
     }
     private JSONObject location() {
         boolean fine = ContextCompat.checkSelfPermission(activity, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
         boolean coarse = ContextCompat.checkSelfPermission(activity, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
-        if (!fine && !coarse) return result(false, "Location permission is off. Allow it for Eta in Settings, then ask again.");
+        if (!fine && !coarse) return result(false, "Location permission is off.");
         LocationManager lm = (LocationManager) activity.getSystemService(Context.LOCATION_SERVICE);
         if (lm == null) return result(false, "Location services are not available.");
-        boolean gpsOn = false, netOn = false;
-        try { gpsOn = lm.isProviderEnabled(LocationManager.GPS_PROVIDER); netOn = lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER); } catch (Exception ignored) {}
-        if (!gpsOn && !netOn) return result(false, "Turn on Location in system settings, then ask again.");
         Location loc = null;
         try {
             if (fine) loc = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER);
             if (loc == null) loc = lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
-            if (loc == null) { try { loc = lm.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER); } catch (Exception ignored) {} }
         } catch (SecurityException e) {
-            return result(false, "Location permission is off. Allow it for Eta, then ask again.");
+            return result(false, "Location permission is off.");
         }
-        if (loc == null) return result(false, "No recent location yet. Open Maps once so the phone caches a fix, then ask me again.");
+        if (loc == null) return result(false, "No recent location yet.");
         double lat = loc.getLatitude(), lng = loc.getLongitude();
         Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse("geo:" + lat + "," + lng + "?q=" + lat + "," + lng));
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        try { activity.startActivity(i); } catch (Exception e) {
-            Intent web = new Intent(Intent.ACTION_VIEW, Uri.parse("https://maps.google.com/?q=" + lat + "," + lng));
-            web.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            activity.startActivity(web);
-        }
-        JSONObject o = result(true, String.format(Locale.US, "You're around %.5f, %.5f. Opening maps.", lat, lng));
-        try { o.put("latitude", lat); o.put("longitude", lng); } catch (Exception ignored) {}
-        return o;
+        try { activity.startActivity(i); } catch (Exception ignored) {}
+        return result(true, String.format(Locale.US, "You're around %.5f, %.5f.", lat, lng));
     }
     private JSONObject searchWeb(String query) {
         if (query == null || query.trim().isEmpty()) return result(false, "What should I search for?");
