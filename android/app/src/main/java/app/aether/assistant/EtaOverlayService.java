@@ -1,6 +1,8 @@
 package app.aether.assistant;
 
 import android.app.Notification;
+import android.content.BroadcastReceiver;
+import android.content.IntentFilter;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -27,17 +29,18 @@ import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.core.app.NotificationCompat;
-import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.Locale;
 
 /**
  * Floating bubble + command panel over any app.
  * E.T.A — Everyday Task Assistant (spoken name: Eta).
+ * Overlay is native-only (no remote WebView) — reduces UI redress risk.
  */
 public class EtaOverlayService extends Service {
     public static final String ACTION_SHOW_PANEL = "app.aether.assistant.SHOW_PANEL";
     public static final String ACTION_STOP = "app.aether.assistant.STOP_OVERLAY";
+    public static final String ACTION_RESULT = "app.aether.assistant.OVERLAY_RESULT";
     private static final String CHANNEL = "eta_overlay";
     private static final int NOTIF_ID = 42;
     private static final String PREFS = "aether";
@@ -55,16 +58,33 @@ public class EtaOverlayService extends Service {
     private boolean panelVisible;
     private boolean listening;
     private SpeechRecognizer recognizer;
-    private AetherBridge bridge;
     private final Handler main = new Handler(Looper.getMainLooper());
+
+    private final BroadcastReceiver resultReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (intent == null || !ACTION_RESULT.equals(intent.getAction())) return;
+            boolean ok = intent.getBooleanExtra("ok", false);
+            String message = intent.getStringExtra("message");
+            if (message == null) message = ok ? "Done." : "Failed.";
+            setStatus("Eta: " + message);
+            if (ok) clearFailures();
+            else noteFailure();
+        }
+    };
 
     @Override
     public void onCreate() {
         super.onCreate();
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
-        bridge = new AetherBridge(nullActivityStub());
         ensureChannel();
         startForeground(NOTIF_ID, buildNotification());
+        IntentFilter filter = new IntentFilter(ACTION_RESULT);
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(resultReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(resultReceiver, filter);
+        }
         if (canDrawOverlays()) {
             showBubble();
         } else {
@@ -75,14 +95,6 @@ public class EtaOverlayService extends Service {
             startActivity(i);
             stopSelf();
         }
-    }
-
-    /** Bridge needs a MainActivity for some actions; use a lightweight host activity start when required. */
-    private MainActivity nullActivityStub() {
-        // AetherBridge uses activity for startActivity / system services.
-        // We attach a context-based helper by starting actions via application context where possible.
-        // For compile + runtime: open MainActivity in singleTask is used only on hard failures.
-        return null;
     }
 
     @Override
@@ -104,6 +116,7 @@ public class EtaOverlayService extends Service {
     @Override
     public void onDestroy() {
         stopListening();
+        try { unregisterReceiver(resultReceiver); } catch (Exception ignored) {}
         removePanel();
         removeBubble();
         super.onDestroy();
@@ -165,7 +178,6 @@ public class EtaOverlayService extends Service {
         panelParams.gravity = Gravity.BOTTOM;
         panelParams.y = 48;
         panelParams.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL;
-        // Allow IME
         panelParams.flags &= ~WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
 
         try {
@@ -199,12 +211,11 @@ public class EtaOverlayService extends Service {
         int type = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                 : WindowManager.LayoutParams.TYPE_PHONE;
-        WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+        return new WindowManager.LayoutParams(
                 w, h, type,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                         | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                 PixelFormat.TRANSLUCENT);
-        return lp;
     }
 
     private void setStatus(String msg) {
@@ -233,9 +244,7 @@ public class EtaOverlayService extends Service {
             @Override public void onBeginningOfSpeech() {}
             @Override public void onRmsChanged(float rmsdB) {}
             @Override public void onBufferReceived(byte[] buffer) {}
-            @Override public void onEndOfSpeech() {
-                setStatus("Got it…");
-            }
+            @Override public void onEndOfSpeech() { setStatus("Got it…"); }
             @Override public void onError(int error) {
                 listening = false;
                 if (micView != null) micView.setBackgroundColor(0xFF2A6BFF);
@@ -291,14 +300,12 @@ public class EtaOverlayService extends Service {
 
     private void handleCommand(String text) {
         setStatus("Working…");
-        // Local fast path via bridge needs Activity — route through OverlayHostActivity
         Intent host = new Intent(this, OverlayHostActivity.class);
         host.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_ANIMATION);
         host.putExtra(OverlayHostActivity.EXTRA_COMMAND, text);
         try {
             startActivity(host);
             setStatus("Eta: running “" + trim(text, 40) + "”");
-            clearFailures();
             if (inputView != null) inputView.setText("");
         } catch (Exception e) {
             setStatus("Could not run that. Try again?");
@@ -325,15 +332,12 @@ public class EtaOverlayService extends Service {
     }
 
     static void reportResult(Context ctx, boolean ok, String message) {
-        // Called from OverlayHostActivity back into the running service via broadcast
         Intent i = new Intent(ACTION_RESULT);
         i.setPackage(ctx.getPackageName());
         i.putExtra("ok", ok);
         i.putExtra("message", message == null ? "" : message);
         ctx.sendBroadcast(i);
     }
-
-    public static final String ACTION_RESULT = "app.aether.assistant.OVERLAY_RESULT";
 
     private void ensureChannel() {
         if (Build.VERSION.SDK_INT < 26) return;
@@ -369,7 +373,6 @@ public class EtaOverlayService extends Service {
         return s.length() <= max ? s : s.substring(0, max) + "…";
     }
 
-    /** Drag to move bubble; short tap opens panel. */
     private class DragTapListener implements View.OnTouchListener {
         private final Runnable onTap;
         private int lastX, lastY, startX, startY;
