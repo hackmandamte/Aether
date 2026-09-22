@@ -8,26 +8,6 @@ import { greetOnce, stopEverything, tapOrb } from "@/lib/aether/session";
 import { useAether } from "@/lib/aether/store";
 import { warmUpDeviceVoice } from "@/lib/aether/voice";
 
-function useKeyboardOpen() {
-  const [open, setOpen] = useState(false);
-  useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-    const check = () => {
-      const covered = window.innerHeight - vv.height;
-      setOpen(covered > 100);
-    };
-    check();
-    vv.addEventListener("resize", check);
-    vv.addEventListener("scroll", check);
-    return () => {
-      vv.removeEventListener("resize", check);
-      vv.removeEventListener("scroll", check);
-    };
-  }, []);
-  return open;
-}
-
 export function AetherShell() {
   const device = useAether((s) => s.device);
   const settings = useAether((s) => s.settings);
@@ -36,7 +16,7 @@ export function AetherShell() {
   const setTheme = useAether((s) => s.setTheme);
   const [mounted, setMounted] = useState(false);
   const [inApp, setInApp] = useState(false);
-  const keyboardOpen = useKeyboardOpen();
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const home = messages.length === 0;
 
   useEffect(() => {
@@ -118,7 +98,7 @@ export function AetherShell() {
       </main>
 
       <div className="shrink-0 bg-bg pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1 transition-colors duration-300">
-        <Composer showActions={home} />
+        <Composer showActions={home} onKeyboard={setKeyboardOpen} />
       </div>
     </div>
   );

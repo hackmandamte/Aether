@@ -21,23 +21,23 @@ export function Transcript({ compact = false }: { compact?: boolean }) {
     bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages.length, error, steps.length, listen]);
 
-  if (!messages.length && !error && !steps.length) {
+  if (!messages.length && !error) {
     return (
       <div
         className={cn(
-          "flex flex-1 flex-col px-6 transition-[justify-content,padding] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
+          "flex flex-1 flex-col px-6 transition-[justify-content,padding] duration-[2000ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
           compact ? "justify-start pb-2 pt-1" : "justify-center py-8",
         )}
       >
         <div
           className={cn(
-            "mx-auto w-full max-w-lg text-center transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
+            "mx-auto w-full max-w-lg text-center transition-all duration-[2000ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
             compact ? "origin-top scale-[0.92]" : "scale-100",
           )}
         >
           <p
             className={cn(
-              "font-display font-semibold tracking-tight text-fg animate-[eta-fade-in_0.7s_ease-out]",
+              "font-display font-semibold tracking-tight text-fg animate-[eta-fade-in_2s_ease-out]",
               compact ? "text-lg sm:text-xl" : "text-[2.15rem] leading-[1.15] sm:text-5xl",
             )}
           >
@@ -45,7 +45,7 @@ export function Transcript({ compact = false }: { compact?: boolean }) {
           </p>
           <p
             className={cn(
-              "mt-3 font-display font-semibold tracking-tight text-fg animate-[eta-fade-in_0.85s_ease-out]",
+              "mt-3 font-display font-semibold tracking-tight text-fg animate-[eta-fade-in_2s_ease-out]",
               compact ? "text-base sm:text-lg" : "text-3xl sm:text-4xl",
             )}
           >
@@ -53,7 +53,7 @@ export function Transcript({ compact = false }: { compact?: boolean }) {
           </p>
           <p
             className={cn(
-              "mx-auto mt-3 max-w-sm text-muted animate-[eta-fade-in_1s_ease-out]",
+              "mx-auto mt-3 max-w-sm text-muted animate-[eta-fade-in_2s_ease-out]",
               compact ? "text-xs" : "text-base leading-relaxed sm:text-lg",
             )}
           >
