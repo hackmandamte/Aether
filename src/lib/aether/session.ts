@@ -334,7 +334,7 @@ async function runTurn(text: string, id: number) {
 }
 
 function buildGreeting(): string {
-  return `${timeGreeting()}. I am ETA, your everyday mobile assistant.`;
+  return `${timeGreeting()}. I am ETA, your everyday task assistant.`;
 }
 
 export async function greetOnce() {
