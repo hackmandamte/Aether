@@ -34,8 +34,7 @@ import java.util.Locale;
 
 /**
  * Floating bubble + command panel over any app.
- * E.T.A — Everyday Task Assistant (spoken name: Eta).
- * Overlay is native-only (no remote WebView) — reduces UI redress risk.
+ * Glass layout matches the in-app composer (chips + input + mic + send).
  */
 public class EtaOverlayService extends Service {
     public static final String ACTION_SHOW_PANEL = "app.aether.assistant.SHOW_PANEL";
@@ -174,9 +173,15 @@ public class EtaOverlayService extends Service {
             return false;
         });
 
+        wireChip(R.id.chip_0);
+        wireChip(R.id.chip_1);
+        wireChip(R.id.chip_2);
+        wireChip(R.id.chip_3);
+        randomizeChips();
+
         panelParams = baseParams(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT);
         panelParams.gravity = Gravity.BOTTOM;
-        panelParams.y = 48;
+        panelParams.y = 24;
         panelParams.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL;
         panelParams.flags &= ~WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
 
@@ -184,7 +189,7 @@ public class EtaOverlayService extends Service {
             windowManager.addView(panelView, panelParams);
             panelVisible = true;
             if (bubbleView != null) bubbleView.setVisibility(View.GONE);
-            setStatus(getString(R.string.overlay_hint));
+            setStatus("What do you want to do?");
         } catch (Exception e) {
             setStatus("Could not open Eta panel");
         }
@@ -218,6 +223,38 @@ public class EtaOverlayService extends Service {
                 PixelFormat.TRANSLUCENT);
     }
 
+    private static final String[] CHIP_POOL = new String[] {
+            "Turn on flashlight", "Turn off flashlight", "Open WhatsApp",
+            "Open Instagram", "Open YouTube", "Open Maps", "Where am I?",
+            "Set a timer for 5 minutes", "Brightness to 50 percent",
+            "Volume to 10", "Take notes", "Search the web for weather"
+    };
+
+    private void wireChip(int id) {
+        if (panelView == null) return;
+        TextView chip = panelView.findViewById(id);
+        if (chip == null) return;
+        chip.setOnClickListener(v -> {
+            CharSequence text = chip.getText();
+            if (text != null && text.length() > 0) {
+                if (inputView != null) inputView.setText(text);
+                submitText();
+            }
+        });
+    }
+
+    private void randomizeChips() {
+        if (panelView == null) return;
+        java.util.List<String> pool = new java.util.ArrayList<>();
+        for (String s : CHIP_POOL) pool.add(s);
+        java.util.Collections.shuffle(pool);
+        int[] ids = { R.id.chip_0, R.id.chip_1, R.id.chip_2, R.id.chip_3 };
+        for (int i = 0; i < ids.length && i < pool.size(); i++) {
+            TextView chip = panelView.findViewById(ids[i]);
+            if (chip != null) chip.setText(pool.get(i));
+        }
+    }
+
     private void setStatus(String msg) {
         if (statusView != null) statusView.setText(msg);
     }
@@ -239,7 +276,7 @@ public class EtaOverlayService extends Service {
             @Override public void onReadyForSpeech(Bundle params) {
                 listening = true;
                 setStatus(getString(R.string.overlay_listening));
-                if (micView != null) micView.setBackgroundColor(0xFFE24B4A);
+                if (micView != null) micView.setBackgroundResource(R.drawable.eta_mic_listening);
             }
             @Override public void onBeginningOfSpeech() {}
             @Override public void onRmsChanged(float rmsdB) {}
@@ -247,13 +284,13 @@ public class EtaOverlayService extends Service {
             @Override public void onEndOfSpeech() { setStatus("Got it…"); }
             @Override public void onError(int error) {
                 listening = false;
-                if (micView != null) micView.setBackgroundColor(0xFF2A6BFF);
+                if (micView != null) micView.setBackgroundResource(R.drawable.eta_mic_bg);
                 setStatus("Didn't catch that — try again or type");
                 noteFailure();
             }
             @Override public void onResults(Bundle results) {
                 listening = false;
-                if (micView != null) micView.setBackgroundColor(0xFF2A6BFF);
+                if (micView != null) micView.setBackgroundResource(R.drawable.eta_mic_bg);
                 ArrayList<String> list = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                 if (list != null && !list.isEmpty()) {
                     String said = list.get(0);
@@ -281,7 +318,7 @@ public class EtaOverlayService extends Service {
 
     private void stopListening() {
         listening = false;
-        if (micView != null) micView.setBackgroundColor(0xFF2A6BFF);
+        if (micView != null) micView.setBackgroundResource(R.drawable.eta_mic_bg);
         if (recognizer != null) {
             try { recognizer.cancel(); recognizer.destroy(); } catch (Exception ignored) {}
             recognizer = null;
