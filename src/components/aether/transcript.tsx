@@ -57,7 +57,7 @@ export function Transcript({ compact = false }: { compact?: boolean }) {
               compact ? "text-xs" : "text-base leading-relaxed sm:text-lg",
             )}
           >
-            your everyday mobile assistant.
+            your everyday task assistant.
             <br />
             What do you want to do?
           </p>
