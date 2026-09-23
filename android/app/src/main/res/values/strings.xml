@@ -6,5 +6,6 @@
     <string name="overlay_listening">ETA is listening…</string>
     <string name="overlay_hint">Speak or type a command</string>
     <string name="overlay_notification">ETA is ready over your apps</string>
-    <string name="accessibility_description">ETA (Everyday Task Assistant) uses Accessibility to press Home, Back, Recents, and Lock when you ask. Nothing is sent off-device except the commands you give ETA.</string>
+    <string name="accessibility_description">ETA uses Accessibility to press Home, Back, Recents, Lock, and to type into other apps when you ask. Nothing is sent off-device except the commands you give ETA.</string>
+    <string name="accessibility_desc">Allow ETA to type into other apps (WhatsApp, Notes, etc.) when you ask.</string>
 </resources>
