@@ -1,7 +1,14 @@
-.gradle/
-build/
-app/build/
-local.properties
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
 keystore.properties
 *.keystore
-*.jks
+app/aether.keystore
+# Offline Vosk model (fetched at CI build time; ~40MB)
+app/src/main/assets/model-en-us/

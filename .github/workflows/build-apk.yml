@@ -6,7 +6,7 @@ permissions:
 jobs:
   apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -16,10 +16,25 @@ jobs:
       - name: Android SDK pieces
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0" "ndk;25.2.9519653"
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.7"
+      - name: Fetch offline English STT model (~40MB)
+        run: |
+          set -e
+          MODEL_URL="https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
+          mkdir -p android/app/src/main/assets
+          curl -fL --retry 3 -o /tmp/vosk-en.zip "$MODEL_URL"
+          rm -rf android/app/src/main/assets/model-en-us
+          unzip -q /tmp/vosk-en.zip -d /tmp/vosk-en
+          # Zip root is vosk-model-small-en-us-0.15/
+          SRC=$(find /tmp/vosk-en -maxdepth 1 -type d -name 'vosk-model*' | head -1)
+          mv "$SRC" android/app/src/main/assets/model-en-us
+          # Sanity: acoustic model present
+          test -f android/app/src/main/assets/model-en-us/am/final.mdl \
+            || test -f android/app/src/main/assets/model-en-us/conf/model.conf
+          du -sh android/app/src/main/assets/model-en-us
       - name: Signing key
         env:
           KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -38,7 +53,7 @@ jobs:
             export SPASS
             keytool -genkeypair -keystore app/aether.keystore -alias "$ALIAS" \
               -keyalg RSA -keysize 4096 -validity 10000 \
-              -storepass:env SPASS -keypass:env SPASS -dname "CN=Aether, O=Personal"
+              -storepass:env SPASS -keypass:env SPASS -dname "CN=ETA, O=Personal"
           fi
           {
             echo "storeFile=aether.keystore"
@@ -55,7 +70,7 @@ jobs:
             echo "::warning::AETHER_SITE_URL secret is not set; the app may ask for the site link on first open."
           fi
           if [ -z "$AETHER_ACCESS_CODE" ]; then
-            echo "::error::AETHER_ACCESS_CODE secret is required. The APK must bake the same code as the server so users never type it."
+            echo "::error::AETHER_ACCESS_CODE secret is required."
             exit 1
           fi
           if [ "${#AETHER_ACCESS_CODE}" -lt 16 ]; then
@@ -64,15 +79,17 @@ jobs:
           fi
           gradle -p android assembleRelease --no-daemon
       - name: Name the APK
-        run: cp android/app/build/outputs/apk/release/app-release.apk Aether.apk
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk ETA.apk
+          ls -lh ETA.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: Aether-apk
-          path: Aether.apk
+          name: ETA-apk
+          path: ETA.apk
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "apk-${{ github.run_number }}" Aether.apk \
+          gh release create "apk-${{ github.run_number }}" ETA.apk \
             --title "ETA APK #${{ github.run_number }}" \
-            --notes "Signed ETA APK. Install on your phone. Access is built in — no code to type."
+            --notes "Signed ETA APK with offline English STT (Vosk). Access is baked in — no code to type. Size may be ~50–100 MB."

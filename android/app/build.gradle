@@ -2,18 +2,12 @@ plugins {
     id "com.android.application"
 }
 
-// Signing secrets live in android/keystore.properties (git-ignored), never in this file.
-// Create them with: sh scripts/make-keystore.sh
 def keystoreProps = new Properties()
 def keystorePropsFile = rootProject.file("keystore.properties")
 if (keystorePropsFile.exists()) {
     keystorePropsFile.withInputStream { keystoreProps.load(it) }
 }
 
-// Optional build-time settings that make the app connect by itself (no setup screen, no
-// code to type). They are compiled into the APK, so keep the APK private.
-//   AETHER_SITE_URL      e.g. https://your-project.vercel.app
-//   AETHER_ACCESS_CODE   the same value as AETHER_ACCESS_CODE on the server
 def bakedSetting = { String envName, String propName ->
     def value = (System.getenv(envName) ?: project.findProperty(propName) ?: "").toString().trim()
     if (!(value ==~ /[A-Za-z0-9+\/=_.:\-]*/)) {
@@ -32,14 +26,24 @@ android {
         applicationId "app.aether.assistant"
         minSdk 26
         targetSdk 34
-        versionCode 3
-        versionName "1.2"
+        versionCode 4
+        versionName "1.3"
         buildConfigField "String", "SITE_URL", "\"${siteUrl}\""
         buildConfigField "String", "ACCESS_CODE", "\"${accessCode}\""
+
+        ndk {
+            abiFilters "armeabi-v7a", "arm64-v8a", "x86_64"
+        }
     }
 
     buildFeatures {
         buildConfig true
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
 
     signingConfigs {
@@ -75,4 +79,7 @@ android {
 dependencies {
     implementation "androidx.appcompat:appcompat:1.6.1"
     implementation "androidx.webkit:webkit:1.10.0"
+    // Offline speech recognition (native). Model is downloaded into assets at CI build time.
+    implementation "com.alphacephei:vosk-android:0.3.47@aar"
+    implementation "net.java.dev.jna:jna:5.13.0@aar"
 }
