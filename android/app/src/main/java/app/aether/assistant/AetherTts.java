@@ -1,6 +1,7 @@
 package app.aether.assistant;
 
 import android.content.Context;
+import android.content.Intent;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.os.Build;
@@ -11,7 +12,7 @@ import android.speech.tts.UtteranceProgressListener;
 import java.util.Locale;
 import java.util.UUID;
 
-/** Real system TTS — WebView speechSynthesis is often silent on Android. */
+/** System TTS with real language selection (not English-with-accent). */
 public final class AetherTts {
     private final Context app;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -51,7 +52,6 @@ public final class AetherTts {
         final float p = Math.max(0.5f, Math.min(2f, pitch));
         final String lang = language == null ? "en" : language;
 
-        // Ensure media stream is audible
         try {
             AudioManager am = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
             if (am != null) {
@@ -63,25 +63,34 @@ public final class AetherTts {
             }
         } catch (Exception ignored) {}
 
-        if (!ready || tts == null) {
-            main.post(this::init);
-            try { Thread.sleep(500); } catch (InterruptedException ignored) {}
-        }
-        if (!ready || tts == null) return false;
-
         final boolean[] started = { false };
         main.post(() -> {
+            if (!ready || tts == null) return;
             try {
-                Locale locale = localeFor(lang);
-                int lr = tts.setLanguage(locale);
-                if (lr == TextToSpeech.LANG_MISSING_DATA || lr == TextToSpeech.LANG_NOT_SUPPORTED) {
-                    tts.setLanguage(Locale.US);
+                Locale loc = localeFor(lang);
+                int avail = tts.isLanguageAvailable(loc);
+                if (avail < TextToSpeech.LANG_AVAILABLE) {
+                    Locale bare = new Locale(loc.getLanguage());
+                    avail = tts.isLanguageAvailable(bare);
+                    if (avail >= TextToSpeech.LANG_AVAILABLE) {
+                        tts.setLanguage(bare);
+                    } else {
+                        try {
+                            Intent install = new Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA);
+                            install.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                            app.startActivity(install);
+                        } catch (Exception ignored) {}
+                        if (!"en".equalsIgnoreCase(lang)) return;
+                        tts.setLanguage(Locale.US);
+                    }
+                } else {
+                    tts.setLanguage(loc);
                 }
                 tts.setSpeechRate(r);
                 tts.setPitch(p);
                 String id = UUID.randomUUID().toString();
                 tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-                    @Override public void onStart(String utteranceId) { started[0] = true; }
+                    @Override public void onStart(String utteranceId) {}
                     @Override public void onDone(String utteranceId) {}
                     @Override public void onError(String utteranceId) {}
                 });
@@ -119,10 +128,10 @@ public final class AetherTts {
 
     private static Locale localeFor(String language) {
         switch (language.toLowerCase(Locale.US)) {
-            case "fr": return Locale.FRENCH;
+            case "fr": return Locale.FRANCE;
             case "hi": return new Locale("hi", "IN");
-            case "ar": return new Locale("ar");
-            case "sw": return new Locale("sw");
+            case "ar": return new Locale("ar", "SA");
+            case "sw": return new Locale("sw", "KE");
             case "es": return new Locale("es", "ES");
             case "pt": return new Locale("pt", "BR");
             default: return Locale.US;
