@@ -21,6 +21,7 @@ import {
   Volume2,
   type LucideIcon,
 } from "lucide-react";
+import { motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { sendText, stopEverything, tapOrb } from "@/lib/aether/session";
 import { useAether } from "@/lib/aether/store";
@@ -59,6 +60,8 @@ function pickSuggestions(count = 4): Suggestion[] {
   return pool.slice(0, count);
 }
 
+const spring = { type: "spring" as const, stiffness: 400, damping: 28 };
+
 export function Composer({
   showActions = false,
   onKeyboard,
@@ -94,25 +97,30 @@ export function Composer({
   return (
     <div className="mx-auto w-full max-w-3xl px-3">
       {showActions ? (
-        <ul className="mb-2 flex flex-wrap justify-center gap-2">
+        <ul className="mb-2.5 flex flex-wrap justify-center gap-2">
           {suggestions.map((hint, i) => {
             const Icon = hint.icon;
             return (
-              <li key={`${hint.text}-${i}`}>
-                <button
+              <motion.li
+                key={`${hint.text}-${i}`}
+                initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ ...spring, delay: 0.08 + i * 0.05 }}
+              >
+                <motion.button
                   type="button"
                   disabled={busy}
+                  whileTap={{ scale: 0.96 }}
                   onClick={() => void sendText(hint.text)}
                   className={cn(
-                    "inline-flex max-w-full items-center gap-1.5 rounded-full border border-border/70 bg-elevated/80 px-3 py-1.5 text-left text-xs font-medium text-fg",
-                    "transition-[background-color,transform] duration-150 hover:bg-subtle active:scale-[0.98]",
+                    "eta-glass inline-flex max-w-full items-center gap-1.5 rounded-full px-3 py-1.5 text-left text-xs font-medium text-fg",
                     "disabled:pointer-events-none disabled:opacity-50",
                   )}
                 >
                   <Icon className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden />
                   <span className="truncate">{hint.text}</span>
-                </button>
-              </li>
+                </motion.button>
+              </motion.li>
             );
           })}
         </ul>
@@ -124,10 +132,11 @@ export function Composer({
         </p>
       ) : null}
 
-      <form
+      <motion.form
+        layout
         className={cn(
-          "flex items-end gap-2 rounded-[1.5rem] bg-elevated px-2 py-2 shadow-[var(--shadow-border)]",
-          "transition-shadow duration-200 focus-within:shadow-[var(--shadow-border-hover)]",
+          "eta-glass flex items-end gap-2 rounded-[1.5rem] px-2 py-2",
+          "transition-[box-shadow] duration-200 focus-within:shadow-[var(--shadow-border-hover)]",
         )}
         onSubmit={(e) => {
           e.preventDefault();
@@ -173,15 +182,16 @@ export function Composer({
             </>
           ) : null}
 
-          <button
+          <motion.button
             type="button"
+            whileTap={{ scale: 0.9 }}
             onClick={() => {
               if (busy && !recording) stopEverything();
               else void tapOrb();
             }}
             aria-label={recording ? "Send voice" : busy ? "Stop" : "Tap to speak"}
             className={cn(
-              "relative z-10 grid size-11 place-items-center rounded-full transition-[background-color,scale] duration-150 active:scale-95",
+              "relative z-10 grid size-11 place-items-center rounded-full transition-colors duration-150",
               recording
                 ? "bg-danger/20 text-danger"
                 : busy
@@ -210,23 +220,24 @@ export function Composer({
             ) : (
               <Mic className="size-5" strokeWidth={1.75} />
             )}
-          </button>
+          </motion.button>
         </div>
 
-        <button
+        <motion.button
           type="submit"
+          whileTap={{ scale: 0.9 }}
           disabled={busy || !value.trim()}
           aria-label="Send"
           className={cn(
-            "grid size-11 shrink-0 place-items-center rounded-full transition-[background-color,scale,opacity] duration-150 active:scale-95",
+            "grid size-11 shrink-0 place-items-center rounded-full transition-colors duration-150",
             value.trim() && !busy
               ? "bg-accent text-accent-fg"
               : "bg-subtle text-faint opacity-50",
           )}
         >
           <ArrowUp className="size-5" strokeWidth={2} />
-        </button>
-      </form>
+        </motion.button>
+      </motion.form>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { Menu, Moon, Sun } from "lucide-react";
+import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { Composer } from "./composer";
 import { Drawer } from "./drawer";
@@ -62,7 +63,7 @@ export function AetherShell() {
   const isLight = settings.theme === "light";
 
   return (
-    <div className="relative mx-auto flex h-dvh w-full max-w-3xl flex-col bg-bg transition-colors duration-300">
+    <div className="eta-ambient relative mx-auto flex h-dvh w-full max-w-3xl flex-col transition-colors duration-300">
       {device.flashlight ? (
         <div className="pointer-events-none absolute inset-0 z-20 bg-[#f4f1e6]/70 mix-blend-screen" />
       ) : null}
@@ -70,19 +71,21 @@ export function AetherShell() {
       <Drawer />
 
       <header className="flex shrink-0 items-center gap-1 px-2 py-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
-        <button
+        <motion.button
           type="button"
+          whileTap={{ scale: 0.92 }}
           onClick={() => setDrawerOpen(true)}
-          className="grid size-11 place-items-center rounded-full text-muted transition-colors hover:bg-subtle hover:text-fg"
+          className="grid size-11 place-items-center rounded-full text-muted transition-colors hover:bg-subtle/80 hover:text-fg"
           aria-label="Open menu"
         >
           <Menu className="size-5" strokeWidth={1.75} />
-        </button>
+        </motion.button>
         <div className="min-w-0 flex-1" />
-        <button
+        <motion.button
           type="button"
+          whileTap={{ scale: 0.92 }}
           onClick={() => setTheme(isLight ? "dark" : "light")}
-          className="grid size-11 place-items-center rounded-full text-muted transition-colors hover:bg-subtle hover:text-fg"
+          className="grid size-11 place-items-center rounded-full text-muted transition-colors hover:bg-subtle/80 hover:text-fg"
           aria-label={isLight ? "Switch to dark mode" : "Switch to light mode"}
         >
           {isLight ? (
@@ -90,14 +93,14 @@ export function AetherShell() {
           ) : (
             <Sun className="size-5" strokeWidth={1.75} />
           )}
-        </button>
+        </motion.button>
       </header>
 
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <Transcript compact={home && keyboardOpen} />
       </main>
 
-      <div className="shrink-0 bg-bg pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1 transition-colors duration-300">
+      <div className="shrink-0 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1">
         <Composer showActions={home} onKeyboard={setKeyboardOpen} />
       </div>
     </div>
