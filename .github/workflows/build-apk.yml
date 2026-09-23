@@ -52,7 +52,15 @@ jobs:
           AETHER_ACCESS_CODE: ${{ secrets.AETHER_ACCESS_CODE }}
         run: |
           if [ -z "$AETHER_SITE_URL" ]; then
-            echo "::warning::AETHER_SITE_URL secret is not set; the app will ask for the site link on first open."
+            echo "::warning::AETHER_SITE_URL secret is not set; the app may ask for the site link on first open."
+          fi
+          if [ -z "$AETHER_ACCESS_CODE" ]; then
+            echo "::error::AETHER_ACCESS_CODE secret is required. The APK must bake the same code as the server so users never type it."
+            exit 1
+          fi
+          if [ "${#AETHER_ACCESS_CODE}" -lt 16 ]; then
+            echo "::error::AETHER_ACCESS_CODE must be at least 16 characters."
+            exit 1
           fi
           gradle -p android assembleRelease --no-daemon
       - name: Name the APK
@@ -66,5 +74,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "apk-${{ github.run_number }}" Aether.apk \
-            --title "Aether APK #${{ github.run_number }}" \
-            --notes "Signed Aether APK. Download Aether.apk on your phone and install it."
+            --title "ETA APK #${{ github.run_number }}" \
+            --notes "Signed ETA APK. Install on your phone. Access is built in — no code to type."

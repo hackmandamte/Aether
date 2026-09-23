@@ -177,7 +177,10 @@ public class MainActivity extends AppCompatActivity {
 
             if ("config".equals(type)) {
                 JSONObject config = AetherBridge.result(true, "config");
-                config.put("accessCode", bakedOrigin != null ? BuildConfig.ACCESS_CODE : "");
+                // Invisible security: release APK is built with AETHER_ACCESS_CODE.
+                // Never shown in the UI; JS pulls it once via this channel.
+                String code = BuildConfig.ACCESS_CODE != null ? BuildConfig.ACCESS_CODE : "";
+                config.put("accessCode", code);
                 return new JSONObject().put("id", id).put("result", config).toString();
             }
 
