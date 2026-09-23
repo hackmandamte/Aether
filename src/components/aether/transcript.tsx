@@ -49,7 +49,7 @@ export function Transcript({ compact = false }: { compact?: boolean }) {
               compact ? "text-base sm:text-lg" : "text-3xl sm:text-4xl",
             )}
           >
-            Hello, I am E.T.A.
+            I am ETA
           </p>
           <p
             className={cn(
@@ -57,7 +57,7 @@ export function Transcript({ compact = false }: { compact?: boolean }) {
               compact ? "text-xs" : "text-base leading-relaxed sm:text-lg",
             )}
           >
-            Your Everyday Task Assistant.
+            your everyday mobile assistant.
             <br />
             What do you want to do?
           </p>
