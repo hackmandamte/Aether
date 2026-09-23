@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Composer } from "./composer";
 import { Drawer } from "./drawer";
 import { Transcript } from "./transcript";
-import { isNativeBridge } from "@/lib/aether/native";
+import { getNativeAccessCode, isNativeBridge } from "@/lib/aether/native";
 import { greetOnce, stopEverything, tapOrb } from "@/lib/aether/session";
 import { useAether } from "@/lib/aether/store";
 import { warmUpDeviceVoice } from "@/lib/aether/voice";
@@ -24,6 +24,8 @@ export function AetherShell() {
     setMounted(true);
     setInApp(isNativeBridge());
     warmUpDeviceVoice();
+    // Invisible unlock: pull baked access code from the APK once.
+    void getNativeAccessCode();
   }, []);
 
   useEffect(() => {

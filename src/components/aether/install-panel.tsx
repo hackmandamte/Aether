@@ -1,27 +1,30 @@
 import { Download, Smartphone } from "lucide-react";
 import { useEffect, useState } from "react";
 import { LANGUAGES, VOICES } from "@/lib/aether/types";
-import { getAccessCode, setAccessCode } from "@/lib/aether/access";
-import { getNativeAccessCode, isNativeBridge } from "@/lib/aether/native";
+import { isNativeBridge } from "@/lib/aether/native";
 import { useAether } from "@/lib/aether/store";
 import { Button } from "@/components/ui/button";
 
 const STEPS = [
   {
     title: "Install the APK",
-    body: "On this Infinix: Chrome menu → Allow unknown apps, then open Aether.apk. Then open Aether, paste this site's link, and confirm.",
+    body: "Download the release APK from GitHub, allow install from that source, then open ETA. Access is already built in — nothing to type.",
   },
   {
-    title: "Set as digital assistant",
-    body: "Settings → App management → Default apps → Digital assistant app → Aether. Long-press Home now opens Aether, not Gemini.",
+    title: "Set as digital assistant (optional)",
+    body: "Settings → App management → Default apps → Digital assistant app → ETA. Long-press Home can open ETA instead of Gemini.",
   },
   {
     title: "Microphone",
-    body: "Grant the microphone so it can hear you. Calls and texts open your dialer or Messages with everything filled in; you tap to dial or send.",
+    body: "Grant the microphone so ETA can hear you.",
   },
   {
-    title: "Accessibility (for lock / home / back)",
-    body: "Settings → Additional settings → Accessibility → Aether. Required for true system keys.",
+    title: "Display over other apps (optional)",
+    body: "Needed for the floating logo hotkey over other apps.",
+  },
+  {
+    title: "Accessibility (optional)",
+    body: "Settings → Accessibility → ETA. Only for Home / Back / Lock-style actions.",
   },
 ];
 
@@ -32,18 +35,12 @@ export function InstallPanel() {
   const native = isNativeBridge();
   const [apkOk, setApkOk] = useState(false);
   const [origin, setOrigin] = useState("");
-  const [code, setCode] = useState("");
-  const [hasCode, setHasCode] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [managed, setManaged] = useState(false);
 
   useEffect(() => {
     setOrigin(window.location.origin);
-    setHasCode(getAccessCode().length > 0);
-    void getNativeAccessCode().then((c) => setManaged(c.length > 0));
   }, []);
 
-  // Check for the APK, and keep checking only until it exists.
   useEffect(() => {
     let cancelled = false;
     let id: number | undefined;
@@ -65,41 +62,33 @@ export function InstallPanel() {
     };
   }, []);
 
-  function saveCode() {
-    setAccessCode(code);
-    setHasCode(code.trim().length > 0);
-    setCode("");
-  }
-
   async function copyLink() {
     try {
       await navigator.clipboard.writeText(origin);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
-      /* clipboard blocked — the link is shown on screen */
+      /* clipboard blocked */
     }
   }
 
   return (
     <div className="flex flex-1 flex-col gap-6 overflow-y-auto pb-6">
       <header>
-        <p className="text-xs font-medium uppercase tracking-[0.14em] text-faint">
-          Replace Gemini
-        </p>
+        <p className="text-xs font-medium uppercase tracking-[0.14em] text-faint">Get ETA</p>
         <h2 className="mt-1 font-display text-2xl font-medium tracking-[-0.03em]">
-          Put Aether on the Smart 8
+          Put ETA on your phone
         </h2>
         <p className="mt-2 max-w-md text-sm leading-relaxed text-muted">
-          This preview talks and drives phone actions in the browser. The APK
-          is what appears in XOS Default apps and can long-press Home.
+          The release APK unlocks the server for you automatically. You never enter an access code.
+          APK size around 15–30 MB is normal.
         </p>
       </header>
 
       {native ? (
         <p className="rounded-[16px] bg-ok/10 px-4 py-3 text-sm text-ok">
-          Running inside the Aether APK. Finish Default assistant + Accessibility
-          if you have not.
+          Running inside the ETA app. Unlock is already handled. Finish assistant / overlay /
+          Accessibility only if you want those extras.
         </p>
       ) : null}
 
@@ -108,8 +97,8 @@ export function InstallPanel() {
           <Smartphone className="mt-0.5 size-5 text-muted" />
           <div className="space-y-3">
             <p className="text-sm leading-relaxed">
-              3 GB tuned. Build the APK once from GitHub, install it, and open
-              Aether. It connects to this site by itself.
+              Build the APK once from GitHub Actions, install it, and open ETA. It connects to this
+              site by itself when the site URL was baked into the build.
             </p>
             {origin ? (
               <p className="break-all rounded-[12px] bg-subtle px-3 py-2 text-xs tabular-nums text-muted">
@@ -120,7 +109,7 @@ export function InstallPanel() {
               {apkOk ? (
                 <a
                   href="/aether.apk"
-                  download="Aether.apk"
+                  download="ETA.apk"
                   className="inline-flex h-11 items-center gap-2 rounded-[var(--radius-md)] bg-accent px-4 text-sm font-medium text-accent-fg transition-[scale] duration-150 ease-out active:scale-[0.96]"
                 >
                   <Download className="size-4" />
@@ -129,18 +118,13 @@ export function InstallPanel() {
               ) : (
                 <Button disabled>
                   <Download className="size-4" />
-                  APK not built yet
+                  APK not on this host yet
                 </Button>
               )}
               <Button variant="quiet" onClick={() => void copyLink()}>
                 {copied ? "Copied" : "Copy site link"}
               </Button>
             </div>
-            {!apkOk ? (
-              <p className="text-xs text-muted">
-                You can still use voice here, or Add to Home screen from Chrome.
-              </p>
-            ) : null}
           </div>
         </div>
       </div>
@@ -156,57 +140,14 @@ export function InstallPanel() {
             </span>
             <div>
               <p className="text-sm font-medium">{step.title}</p>
-              <p className="mt-1 text-sm leading-relaxed text-muted">
-                {step.body}
-              </p>
+              <p className="mt-1 text-sm leading-relaxed text-muted">{step.body}</p>
             </div>
           </li>
         ))}
       </ol>
 
       <section className="space-y-3">
-        <h3 className="text-xs font-medium uppercase tracking-[0.14em] text-faint">
-          Access code
-        </h3>
-        {managed ? (
-          <p className="text-xs leading-relaxed text-muted">
-            This app unlocks Aether for you. Nothing to enter.
-          </p>
-        ) : (
-          <>
-            <p className="text-xs leading-relaxed text-muted">
-              The code set as AETHER_ACCESS_CODE on the server. It stays on this
-              device and unlocks talking to Aether.{" "}
-              {hasCode ? "A code is saved." : "No code saved yet."}
-            </p>
-            <div className="flex gap-2">
-              <input
-                type="password"
-                autoComplete="off"
-                autoCapitalize="none"
-                spellCheck={false}
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                placeholder={hasCode ? "Replace code" : "Enter code"}
-                aria-label="Access code"
-                className="min-h-11 flex-1 rounded-[var(--radius-lg)] bg-elevated px-4 text-sm text-fg shadow-[var(--shadow-border)] placeholder:text-faint outline-none focus:shadow-[var(--shadow-border-hover)]"
-              />
-              <Button variant="quiet" onClick={saveCode} disabled={!code.trim() && !hasCode}>
-                {code.trim() ? "Save" : "Clear"}
-              </Button>
-            </div>
-          </>
-        )}
-      </section>
-
-      <section className="space-y-3">
-        <h3 className="text-xs font-medium uppercase tracking-[0.14em] text-faint">
-          Voice
-        </h3>
-        <p className="text-xs leading-relaxed text-faint">
-          The voice picker applies to xAI voices. On the free setup Aether
-          speaks with your phone&apos;s own voice.
-        </p>
+        <h3 className="text-xs font-medium uppercase tracking-[0.14em] text-faint">Voice</h3>
         <div className="flex flex-wrap gap-2">
           {VOICES.map((v) => (
             <Button
@@ -231,11 +172,6 @@ export function InstallPanel() {
             </Button>
           ))}
         </div>
-        <p className="text-xs leading-relaxed text-faint">
-          True “Hey Google” with the screen off is reserved by Google. With
-          Aether set as the default assistant, long-press Home or the power
-          assist gesture launches it instead.
-        </p>
       </section>
     </div>
   );

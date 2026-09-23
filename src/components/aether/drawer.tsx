@@ -10,9 +10,8 @@ import {
   Wifi,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
-import { getAccessCode, setAccessCode } from "@/lib/aether/access";
-import { getNativeAccessCode, isNativeBridge, runPhoneAction } from "@/lib/aether/native";
+import { useState } from "react";
+import { isNativeBridge, runPhoneAction } from "@/lib/aether/native";
 import { useAether } from "@/lib/aether/store";
 import { LANGUAGES, VOICES, resolveVoiceId } from "@/lib/aether/types";
 import { speakWithDevice } from "@/lib/aether/voice";
@@ -32,25 +31,7 @@ export function Drawer() {
   const deleteNote = useAether((s) => s.deleteNote);
 
   const [section, setSection] = useState<"main" | "settings" | "notes">("main");
-  const [code, setCode] = useState("");
-  const [hasCode, setHasCode] = useState(false);
-  const [managed, setManaged] = useState(false);
   const [previewing, setPreviewing] = useState(false);
-
-  useEffect(() => {
-    if (!open) {
-      setSection("main");
-      return;
-    }
-    setHasCode(getAccessCode().length > 0);
-    void getNativeAccessCode().then((c) => setManaged(c.length > 0));
-  }, [open]);
-
-  function saveCode() {
-    setAccessCode(code);
-    setHasCode(code.trim().length > 0);
-    setCode("");
-  }
 
   function newChat() {
     clearMessages();
@@ -62,7 +43,7 @@ export function Drawer() {
     setPreviewing(true);
     try {
       await speakWithDevice(
-        "Hello, I am Eta, your personal mobile assistant.",
+        "Hello, I am ETA, your everyday task assistant.",
         settings.language,
         Math.max(0.3, device.volume / 15),
         id,
@@ -97,8 +78,8 @@ export function Drawer() {
       >
         <div className="flex items-center justify-between border-b border-border px-4 py-4 pt-[max(1rem,env(safe-area-inset-top))]">
           <div>
-            <p className="font-display text-lg font-medium tracking-tight">Eta</p>
-            <p className="text-[11px] text-faint">Personal assistant</p>
+            <p className="font-display text-lg font-medium tracking-tight">ETA</p>
+            <p className="text-[11px] text-faint">Everyday Task Assistant</p>
           </div>
           <button
             type="button"
@@ -205,7 +186,8 @@ export function Drawer() {
                   Voice
                 </p>
                 <p className="mb-3 text-xs text-muted">
-                  Uses your phone's text-to-speech. Tap a style to select and hear a sample.
+                  Uses online speech when available, with your phone as backup. Tap a style to
+                  select and hear a sample.
                 </p>
                 <div className="grid grid-cols-2 gap-2">
                   {VOICES.map((v) => (
@@ -263,7 +245,7 @@ export function Drawer() {
                   Language
                 </p>
                 <p className="mb-2 text-xs text-muted">
-                  Speech uses your phone's voices in this language when available.
+                  Speech uses this language when available.
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {LANGUAGES.map((l) => (
@@ -279,32 +261,14 @@ export function Drawer() {
                 </div>
               </div>
 
-              {!isNativeBridge() || !managed ? (
-                <div>
-                  <p className="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-faint">
-                    Access code
-                  </p>
-                  <p className="mb-2 text-xs text-muted">
-                    {hasCode
-                      ? "A code is saved on this device."
-                      : "Enter the server access code once."}
-                  </p>
-                  <div className="flex gap-2">
-                    <input
-                      type="password"
-                      autoComplete="off"
-                      value={code}
-                      onChange={(e) => setCode(e.target.value)}
-                      placeholder={hasCode ? "Replace code" : "Enter code"}
-                      className="min-h-11 flex-1 rounded-xl bg-subtle px-3 text-sm outline-none focus:ring-1 focus:ring-border-strong"
-                    />
-                    <Button variant="quiet" size="sm" onClick={saveCode}>
-                      {code.trim() ? "Save" : hasCode ? "Clear" : "Save"}
-                    </Button>
-                  </div>
-                </div>
+              {isNativeBridge() ? (
+                <p className="text-xs leading-relaxed text-muted">
+                  This install unlocks ETA automatically. No access code to enter.
+                </p>
               ) : (
-                <p className="text-xs text-muted">This app unlocks Eta automatically.</p>
+                <p className="text-xs leading-relaxed text-muted">
+                  Full unlock works in the ETA app. Browser preview is for testing the UI.
+                </p>
               )}
             </div>
           ) : null}
@@ -319,7 +283,7 @@ export function Drawer() {
                 ← Back
               </button>
               {!notes.length ? (
-                <p className="text-sm text-muted">No notes yet. Ask Eta to remember something.</p>
+                <p className="text-sm text-muted">No notes yet. Ask ETA to remember something.</p>
               ) : (
                 <ul className="space-y-2">
                   {notes.map((n) => (
