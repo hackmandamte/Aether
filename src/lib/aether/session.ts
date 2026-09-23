@@ -4,6 +4,7 @@ import { getNativeAccessCode, runPhoneActions } from "./native";
 import { createVad } from "./silence";
 import { useAether } from "./store";
 import { resolveVoiceId, type PhoneAction } from "./types";
+import { hasOnDeviceStt, recognizeOnce } from "./device-stt";
 import {
   base64ToAudioUrl,
   blobToBase64,
@@ -181,6 +182,25 @@ export async function startListening() {
   s.setError(null);
   s.setSteps([]);
   s.setListen("recording");
+
+  // Prefer on-device STT (OS engine) when enabled — no audio upload.
+  if (s.settings.preferOnDeviceSpeech && hasOnDeviceStt()) {
+    step("Listening on this phone…");
+    try {
+      const text = await recognizeOnce(s.settings.language);
+      if (id !== runId) return;
+      if (text) {
+        step(`Heard: "${text.slice(0, 80)}"`);
+        await runTurn(text, id);
+        return;
+      }
+      step("On-device listen empty, using online ear");
+    } catch {
+      step("On-device listen failed, using online ear");
+    }
+    if (id !== runId) return;
+  }
+
   step("Opening the microphone");
 
   let ctx: AudioContext | null = null;
@@ -354,6 +374,12 @@ export async function speak(text: string, id: number = ++runId) {
 
   try {
     if (id !== runId) return;
+
+    if (s.settings.preferOnDeviceSpeech) {
+      step("Speaking on this phone");
+      await speakWithDevice(text, language, vol, voice);
+      return;
+    }
 
     const remote = await speakAether({
       data: {
