@@ -31,8 +31,8 @@ It started as an experiment to build a serious, useful assistant that still feel
 | **Notes** | Take / save notes |
 | **Location** | Ask where you are (needs location permission) |
 | **Web** | Search the web, open a URL |
-| **Voice** | Speak replies with online TTS; choose calm / warm / male / female-style voices when the server path is live |
-| **Overlay** | Floating logo bubble over other apps — speak or type a command without opening the full app |
+| **Voice** | Speak replies with online TTS; choose voice styles in Settings |
+| **Overlay** | Floating logo bubble over other apps — speak or type without opening the full app |
 
 Not every phone allows every action the same way (OEM settings differ). When something needs a system permission, ETA should ask or point you to Settings instead of pretending it worked.
 
@@ -47,32 +47,56 @@ Grant these when Android asks, or later under **Settings → Apps → E.T.A / ET
 | **Microphone** | Voice commands |
 | **Internet / Network** | Chat, speech-to-text, text-to-speech (online) |
 | **Location** (optional but useful) | “Where am I?” and place-related requests |
-| **Display over other apps** (SYSTEM_ALERT_WINDOW) | Floating hotkey bubble |
-| **Notifications** | Overlay service / “ETA is ready” status on newer Android |
-| **Modify system settings** (optional) | Brightness and similar controls on some devices |
-| **Accessibility** (optional) | Home / Back / Recents / Lock-style actions if you enable that service |
+| **Display over other apps** | Floating hotkey bubble |
+| **Notifications** | Overlay service status on newer Android |
+| **Modify system settings** (optional) | Brightness on some devices |
+| **Accessibility** (optional) | Home / Back / Recents / Lock-style actions |
 
-You do **not** need to grant every permission for basic chat. Mic + network are the minimum for talking to ETA. Overlay and location only when you want those features.
+Mic + network are the minimum. Overlay and location only when you want those features.
 
 ---
 
-## Pre-install checklist
+## Pre-install checklist (phone user)
 
-Do these **before** you rely on ETA day to day:
+You do **not** enter an access code. Unlocking the server is built into the release APK as an invisible security feature.
 
-1. **Install the APK** built from this project (GitHub Actions → **Build Aether APK**, prefer the `new-branch-one` branch while features are in testing).
-2. **Host / deploy the web app** (e.g. Vercel) so the phone has a live `https://…` site to connect to. The APK is a shell; the assistant logic runs on that site.
-3. **Set server environment variables** on the host (not on the phone):
-   - `AETHER_ACCESS_CODE` (or `AETHER_ACCESS_CODES`) — long secret, 16+ characters  
-   - `AETHER_PROVIDER` — e.g. `groq` or `xai`  
-   - Matching API key (`GROQ_API_KEY` or `XAI_API_KEY`)
-4. **Open the app once** → connect to your site URL → enter the **same access code** in Settings (unless it was baked into the APK).
-5. **Allow microphone** when prompted.
-6. For the **floating hotkey**: allow **Display over other apps** (and notifications if Android asks).
-7. For **location** features: allow location while using the app (or as you prefer).
-8. Optional: enable the **Accessibility** service only if you want Home/Back/lock-style controls.
+1. **Install the APK** from GitHub Actions → **Build Aether APK** (prefer branch `new-branch-one` while testing). Size can land around **15–30 MB** depending on assets — that is expected.
+2. Open the app once and **allow microphone** (and overlay / location if you want those).
+3. Optional: set ETA as digital assistant; enable Accessibility only if you want Home/Back/lock controls.
 
-Until the hosted site deploys successfully, the phone may still hit an old or broken backend. Fix Vercel (or your host) first, then reinstall or reopen the app.
+If the app cannot talk to the server, the person who hosts the site needs to fix deploy + secrets (below) — not something you type into Settings.
+
+---
+
+## Deployer setup (you host the brain — not for end users)
+
+The APK is a shell. The assistant runs on your hosted site (e.g. Vercel).
+
+### Server (Vercel / host)
+
+Set the **same** secret in both places:
+
+| Variable | Role |
+|----------|------|
+| `AETHER_ACCESS_CODE` | Long secret (16+ chars). Server refuses requests without it. |
+| `AETHER_PROVIDER` | e.g. `groq` or `xai` |
+| `GROQ_API_KEY` or `XAI_API_KEY` | Matching provider key |
+
+Generate a code: `openssl rand -base64 24`
+
+### APK build (GitHub secrets)
+
+| Secret | Role |
+|--------|------|
+| `AETHER_SITE_URL` | Your live site origin, e.g. `https://your-app.vercel.app` (no path) |
+| `AETHER_ACCESS_CODE` | **Exactly the same** value as on the server |
+| Signing secrets | Optional; otherwise a one-off key is generated per build |
+
+The workflow **fails** if `AETHER_ACCESS_CODE` is missing so a broken APK without unlock is not published.
+
+At build time the code is compiled into the APK (`BuildConfig.ACCESS_CODE`). On open, the app hands it to the web layer over the native bridge. **No Settings field, no paste step.**
+
+Treat the APK as private: anyone with your APK can call *your* server the same way the app does.
 
 ---
 
@@ -81,16 +105,14 @@ Until the hosted site deploys successfully, the phone may still hit an old or br
 | Branch | Role |
 |--------|------|
 | `main` | Store / stable path |
-| `new-branch-one` | Active feature work (overlay, home UI, branding) |
+| `new-branch-one` | Active feature work |
 | `new-branch-two` | Spare test branch |
-
-Prefer testing new UI and overlay builds from **`new-branch-one`** before promoting to `main`.
 
 ---
 
 ## Privacy note
 
-Voice and chat go to your configured **online** AI provider so ETA can answer and speak. Device commands (flashlight, open app, etc.) run on the phone. Use a strong access code and do not share your deploy URL + code publicly.
+Voice and chat go to your configured **online** AI provider. Device commands run on the phone. Do not publish your deploy URL + access code or public APK builds that embed a production secret if the server is meant to stay private.
 
 ---
 
