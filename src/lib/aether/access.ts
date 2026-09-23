@@ -2,7 +2,11 @@ const KEY = "aether-access-code";
 const MIN_LEN = 16;
 const MAX_LEN = 256;
 
-/** The code that unlocks this deployment's server. Lives only on this device. */
+/**
+ * Server unlock secret. On the ETA APK this is supplied by the native bridge
+ * (baked at build time) and never shown in the UI. Browser-only sessions may
+ * still hold a code in localStorage for developers — end users should use the APK.
+ */
 export function getAccessCode(): string {
   try {
     return localStorage.getItem(KEY) ?? "";
@@ -11,17 +15,14 @@ export function getAccessCode(): string {
   }
 }
 
-/**
- * Store the access code on this device only.
- * Caps length to avoid abuse; min length is enforced on the server.
- */
+/** Store silently on this device. Not exposed as a user-facing setting. */
 export function setAccessCode(code: string): void {
   try {
     const trimmed = code.trim().slice(0, MAX_LEN);
     if (trimmed) localStorage.setItem(KEY, trimmed);
     else localStorage.removeItem(KEY);
   } catch {
-    /* storage blocked — the user will just be asked again */
+    /* storage blocked */
   }
 }
 

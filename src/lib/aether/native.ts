@@ -4,6 +4,7 @@ import {
   parseLevel,
   parseTimerSeconds,
 } from "./parse";
+import { setAccessCode } from "./access";
 import { useAether } from "./store";
 import type { ActionResult, PhoneAction } from "./types";
 
@@ -84,13 +85,24 @@ function nativeExecute(action: PhoneAction): Promise<ActionResult | null> {
 }
 
 let nativeCode: string | null = null;
+let nativeCodeFetched = false;
 
+/**
+ * Invisible unlock: the release APK is built with AETHER_ACCESS_CODE.
+ * We pull it once from the native bridge and never show it in the UI.
+ */
 export async function getNativeAccessCode(): Promise<string> {
   if (!isNativeBridge()) return "";
-  if (nativeCode !== null) return nativeCode;
+  if (nativeCodeFetched) return nativeCode ?? "";
+  nativeCodeFetched = true;
   const reply = await postNative({ type: "config" });
-  if (reply?.ok && typeof reply.accessCode === "string") nativeCode = reply.accessCode;
-  return nativeCode ?? "";
+  if (reply?.ok && typeof reply.accessCode === "string" && reply.accessCode.trim()) {
+    nativeCode = reply.accessCode.trim();
+    setAccessCode(nativeCode);
+  } else {
+    nativeCode = "";
+  }
+  return nativeCode;
 }
 
 function openUrl(url: string) {
@@ -230,7 +242,6 @@ export async function runPhoneAction(action: PhoneAction): Promise<ActionResult>
     }
   }
 
-  // Only mirror local UI state when the action truly succeeded
   if (result.ok) applyLocal(applied);
   store.setLastAction(result.message);
   return result;
