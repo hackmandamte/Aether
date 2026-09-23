@@ -177,11 +177,38 @@ public class MainActivity extends AppCompatActivity {
 
             if ("config".equals(type)) {
                 JSONObject config = AetherBridge.result(true, "config");
-                // Invisible security: release APK is built with AETHER_ACCESS_CODE.
-                // Never shown in the UI; JS pulls it once via this channel.
                 String code = BuildConfig.ACCESS_CODE != null ? BuildConfig.ACCESS_CODE : "";
                 config.put("accessCode", code);
+                boolean offline = false;
+                try { offline = EtaOfflineStt.isReady(this); } catch (Throwable ignored) {}
+                config.put("offlineStt", offline);
                 return new JSONObject().put("id", id).put("result", config).toString();
+            }
+
+            if ("listen_offline".equals(type)) {
+                final String rid = id;
+                final int maxMs = request.optInt("maxMs", 10000);
+                new Thread(() -> {
+                    try {
+                        String text = EtaOfflineStt.listenOnce(MainActivity.this, maxMs);
+                        JSONObject result = AetherBridge.result(true,
+                                text == null || text.isEmpty() ? "Nothing heard." : "Heard.");
+                        result.put("text", text == null ? "" : text);
+                        final String payload = new JSONObject().put("id", rid).put("result", result).toString();
+                        runOnUiThread(() -> dispatchOfflineStt(payload));
+                    } catch (Exception e) {
+                        try {
+                            JSONObject result = AetherBridge.result(false,
+                                    e.getMessage() != null ? e.getMessage() : "Offline STT failed");
+                            result.put("text", "");
+                            final String payload = new JSONObject().put("id", rid).put("result", result).toString();
+                            runOnUiThread(() -> dispatchOfflineStt(payload));
+                        } catch (Exception ignored) {}
+                    }
+                }, "eta-offline-stt").start();
+                JSONObject pending = AetherBridge.result(true, "listening");
+                pending.put("pending", true);
+                return new JSONObject().put("id", id).put("result", pending).toString();
             }
 
             if ("speak".equals(type) && tts != null) {
@@ -215,6 +242,13 @@ public class MainActivity extends AppCompatActivity {
             return "{\"id\":" + JSONObject.quote(id)
                     + ",\"result\":{\"ok\":false,\"native\":true,\"message\":\"error\"}}";
         }
+    }
+
+    private void dispatchOfflineStt(String payload) {
+        if (webView == null) return;
+        String js = "(function(){try{window.dispatchEvent(new MessageEvent('aether-offline-stt',{data:"
+                + JSONObject.quote(payload) + "}));}catch(e){}})();";
+        webView.evaluateJavascript(js, null);
     }
 
     private void handleSetupLink(WebView view, Uri uri) {
