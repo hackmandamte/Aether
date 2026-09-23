@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
+import { createEncryptedStorage } from "./crypto";
 import {
   resolveVoiceId,
   type ChatMessage,
@@ -20,6 +21,8 @@ type Settings = {
   wakeEnabled: boolean;
   onboarded: boolean;
   theme: ThemeId;
+  /** Prefer on-device STT/TTS when the phone supports it */
+  preferOnDeviceSpeech: boolean;
 };
 
 type Device = {
@@ -47,6 +50,7 @@ type AetherState = {
   setLanguage: (language: LanguageId) => void;
   setTheme: (theme: ThemeId) => void;
   setWakeEnabled: (wakeEnabled: boolean) => void;
+  setPreferOnDeviceSpeech: (prefer: boolean) => void;
   setOnboarded: () => void;
   patchDevice: (patch: Partial<Device>) => void;
   addMessage: (msg: ChatMessage) => void;
@@ -75,6 +79,7 @@ export const useAether = create<AetherState>()(
         wakeEnabled: false,
         onboarded: false,
         theme: "dark",
+        preferOnDeviceSpeech: true,
       },
       device: {
         flashlight: false,
@@ -101,6 +106,8 @@ export const useAether = create<AetherState>()(
         set((s) => ({ settings: { ...s.settings, theme } })),
       setWakeEnabled: (wakeEnabled) =>
         set((s) => ({ settings: { ...s.settings, wakeEnabled } })),
+      setPreferOnDeviceSpeech: (preferOnDeviceSpeech) =>
+        set((s) => ({ settings: { ...s.settings, preferOnDeviceSpeech } })),
       setOnboarded: () =>
         set((s) => ({ settings: { ...s.settings, onboarded: true } })),
       patchDevice: (patch) =>
@@ -157,17 +164,8 @@ export const useAether = create<AetherState>()(
       rememberActions: () => undefined,
     }),
     {
-      name: "aether-v2",
-      storage: createJSONStorage(() => {
-        if (typeof window === "undefined") {
-          return {
-            getItem: () => null,
-            setItem: () => {},
-            removeItem: () => {},
-          };
-        }
-        return localStorage;
-      }),
+      name: "aether-v3-enc",
+      storage: createJSONStorage(() => createEncryptedStorage()),
       partialize: (s) => ({
         settings: {
           ...s.settings,
