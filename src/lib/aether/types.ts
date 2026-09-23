@@ -13,7 +13,6 @@ export type VoiceId = (typeof VOICES)[number]["id"];
 
 export function resolveVoiceId(raw: string | undefined | null): VoiceId {
   if (raw && VOICES.some((v) => v.id === raw)) return raw as VoiceId;
-  // Legacy ids from older builds
   if (raw === "eve" || raw === "ara") return "warm-f";
   if (raw === "rex" || raw === "leo") return "deep-m";
   if (raw === "sal") return "clear-m";
@@ -53,6 +52,8 @@ export type PhoneActionName =
   | "back"
   | "wifi"
   | "bluetooth"
+  | "hotspot"
+  | "type_text"
   | "navigate"
   | "location"
   | "search_web"
