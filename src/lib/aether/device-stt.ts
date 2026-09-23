@@ -1,7 +1,7 @@
 /**
- * On-device speech-to-text via the phone / browser engine
- * (Android WebView + Google SpeechRecognizer when available).
- * No extra model download — uses the OS voice stack already on the device.
+ * On-device speech-to-text.
+ * Order: (1) Vosk offline in the ETA APK  (2) browser / OS SpeechRecognition
+ *        (3) caller falls back to online hearAether.
  */
 
 const DEVICE_LANG: Record<string, string> = {
@@ -13,6 +13,16 @@ const DEVICE_LANG: Record<string, string> = {
   es: "es-ES",
   pt: "pt-BR",
 };
+
+type NativeChannel = {
+  postMessage: (message: string) => void;
+};
+
+declare global {
+  interface Window {
+    AetherNative?: NativeChannel;
+  }
+}
 
 type SpeechRecCtor = new () => {
   lang: string;
@@ -38,15 +48,59 @@ function getSpeechRecognition(): SpeechRecCtor | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
-export function hasOnDeviceStt(): boolean {
-  return getSpeechRecognition() !== null;
+function hasNativeBridge(): boolean {
+  return typeof window !== "undefined" && typeof window.AetherNative?.postMessage === "function";
 }
 
-/**
- * Listen once with the device STT engine. Resolves with transcript or null.
- * Caller should already have mic permission.
- */
-export function recognizeOnce(language: string, timeoutMs = 12_000): Promise<string | null> {
+export function hasOnDeviceStt(): boolean {
+  return hasNativeBridge() || getSpeechRecognition() !== null;
+}
+
+/** Offline Vosk inside the APK (English model ~40MB, no network). */
+function recognizeNativeOffline(timeoutMs: number): Promise<string | null> {
+  if (!hasNativeBridge()) return Promise.resolve(null);
+
+  return new Promise((resolve) => {
+    const id = crypto.randomUUID();
+    let settled = false;
+    const finish = (text: string | null) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      window.removeEventListener("aether-offline-stt", onEvt as EventListener);
+      resolve(text);
+    };
+
+    const onEvt = (ev: Event) => {
+      try {
+        const data = (ev as MessageEvent).data;
+        const raw = typeof data === "string" ? data : String(data ?? "");
+        const msg = JSON.parse(raw) as {
+          id?: string;
+          result?: { ok?: boolean; text?: string };
+        };
+        if (msg.id && msg.id !== id) return;
+        const t = msg.result?.text?.trim();
+        finish(t || null);
+      } catch {
+        finish(null);
+      }
+    };
+
+    window.addEventListener("aether-offline-stt", onEvt as EventListener);
+    const timer = window.setTimeout(() => finish(null), timeoutMs + 4000);
+
+    try {
+      window.AetherNative!.postMessage(
+        JSON.stringify({ id, type: "listen_offline", maxMs: timeoutMs }),
+      );
+    } catch {
+      finish(null);
+    }
+  });
+}
+
+function recognizeWebSpeech(language: string, timeoutMs: number): Promise<string | null> {
   const Ctor = getSpeechRecognition();
   if (!Ctor) return Promise.resolve(null);
 
@@ -87,4 +141,16 @@ export function recognizeOnce(language: string, timeoutMs = 12_000): Promise<str
       finish(null);
     }
   });
+}
+
+/**
+ * Listen once. Prefer APK Vosk offline, then OS Web Speech, else null
+ * (caller uses online STT).
+ */
+export async function recognizeOnce(language: string, timeoutMs = 12_000): Promise<string | null> {
+  if (hasNativeBridge()) {
+    const offline = await recognizeNativeOffline(timeoutMs);
+    if (offline) return offline;
+  }
+  return recognizeWebSpeech(language, timeoutMs);
 }
