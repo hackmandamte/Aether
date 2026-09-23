@@ -8,6 +8,7 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
@@ -116,6 +117,7 @@ public class MainActivity extends AppCompatActivity {
                 : normalizeOrigin(getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_ORIGIN, ""));
         installBridge();
         requestCorePermissions();
+        requestOverlayPermission();
         maybeAskAssistantRole();
         loadDestination();
         maybeStartOverlay(getIntent());
@@ -316,6 +318,22 @@ public class MainActivity extends AppCompatActivity {
         String path = uri.getPath();
         if (path != null && !path.isEmpty() && !"/".equals(path)) return null;
         return originOf(uri);
+    }
+
+    private void requestOverlayPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (!Settings.canDrawOverlays(this)) {
+                try {
+                    Intent i = new Intent(
+                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:" + getPackageName()));
+                    startActivity(i);
+                    Toast.makeText(this,
+                            "Allow ETA to display over other apps \u2014 that is the logo hotkey.",
+                            Toast.LENGTH_LONG).show();
+                } catch (Exception ignored) {}
+            }
+        }
     }
 
     private void requestCorePermissions() {
