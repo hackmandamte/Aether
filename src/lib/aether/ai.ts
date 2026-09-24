@@ -1,1 +1,3 @@
-SEE_LOCAL_FILE_TOO_LARGE_USE_PATCH
+import { createServerFn } from "@tanstack/react-start";
+// TEMP RESTORE MARKER - full content follows in next commit if truncated
+export {};
