@@ -1,3 +1,5 @@
+import { TermsGate } from "@/components/aether/terms-gate";
+import { termsAccepted } from "@/lib/aether/terms";
 import { Menu, Moon, Sun } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
@@ -12,6 +14,7 @@ import { warmUpDeviceVoice } from "@/lib/aether/voice";
 export function AetherShell() {
   const device = useAether((s) => s.device);
   const settings = useAether((s) => s.settings);
+  const setTermsAccepted = useAether((s) => s.setTermsAccepted);
   const messages = useAether((s) => s.messages);
   const setDrawerOpen = useAether((s) => s.setDrawerOpen);
   const setTheme = useAether((s) => s.setTheme);
@@ -24,7 +27,6 @@ export function AetherShell() {
     setMounted(true);
     setInApp(isNativeBridge());
     warmUpDeviceVoice();
-    // Invisible unlock: pull baked access code from the APK once.
     void getNativeAccessCode();
   }, []);
 
@@ -63,6 +65,10 @@ export function AetherShell() {
   }, []);
 
   const isLight = settings.theme === "light";
+
+  if (!termsAccepted(settings.termsAcceptedVersion)) {
+    return <TermsGate onAccept={(v) => setTermsAccepted(v)} />;
+  }
 
   return (
     <div className="eta-ambient relative mx-auto flex h-dvh w-full max-w-3xl flex-col transition-colors duration-300">
