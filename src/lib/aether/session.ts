@@ -1,5 +1,6 @@
 import { getAccessCode } from "./access";
 import { askAether, hearAether, speakAether, toChatPayload } from "./ai";
+import { MAX_AGENT_ROUNDS, type ToolOutcome } from "./agent";
 import { getNativeAccessCode, runPhoneActions } from "./native";
 import {
   collectPhoneActions,
@@ -196,7 +197,7 @@ export async function startListening() {
       const text = await recognizeOnce(s.settings.language);
       if (id !== runId) return;
       if (text) {
-        step(`Heard: "${text.slice(0, 80)}"`);
+        step(`Heard: \"${text.slice(0, 80)}\"`);
         await runTurn(text, id);
         return;
       }
@@ -278,7 +279,7 @@ export async function finishListening(id: number) {
       fail(heard.error);
       return;
     }
-    step(`Heard: "${heard.text.slice(0, 80)}"`);
+    step(`Heard: \"${heard.text.slice(0, 80)}\"`);
     await runTurn(heard.text, id);
   } catch {
     stopStream();
@@ -295,8 +296,8 @@ export async function sendText(text: string) {
 
 /**
  * Shared turn path for typed and voice input.
- * Multi-intent messages go through the orchestrator; otherwise the existing
- * LLM + phone_action pipeline runs (now without a hard 3-action ceiling).
+ * Multi-intent → application orchestrator + model final synthesis over results.
+ * Otherwise → bounded agent loop (model → tools → results → model).
  */
 async function runTurn(text: string, id: number) {
   const trimmed = text.trim();
@@ -323,10 +324,47 @@ async function runTurn(text: string, id: number) {
     });
     if (id !== runId) return;
 
-    const spoken = synthesizeReply(finished);
-    const actions = collectPhoneActions(finished);
+    const outcomes: ToolOutcome[] = finished.map((task) => ({
+      ok: Boolean(task.result?.ok),
+      message: task.result?.message ?? task.error ?? task.type,
+      data: task.result?.data,
+      action: task.phoneAction,
+    }));
 
     step("Putting it together");
+    let spoken = synthesizeReply(finished);
+    try {
+      const polished = await askAether({
+        data: {
+          accessCode: await accessCode(),
+          language: s.settings.language,
+          messages: [{ role: "user", text: trimmed }],
+          toolResults: outcomes.map((o) => ({
+            ok: o.ok,
+            message: o.message,
+            data: o.data,
+            action: o.action
+              ? {
+                  action: o.action.action,
+                  value: o.action.value,
+                  target: o.action.target,
+                  extra: o.action.extra,
+                }
+              : undefined,
+          })),
+          phase: "finalize",
+        },
+      });
+      if (id !== runId) return;
+      if (polished.ok && polished.text.trim()) {
+        spoken = polished.text.trim();
+      }
+    } catch {
+      /* keep deterministic synthesis */
+    }
+
+    const actions = collectPhoneActions(finished);
+
     store().addMessage({
       id: crypto.randomUUID(),
       role: "assistant",
@@ -339,13 +377,15 @@ async function runTurn(text: string, id: number) {
     return;
   }
 
+  const chatMessages = toChatPayload(store().messages);
   let reply: Awaited<ReturnType<typeof askAether>>;
   try {
     reply = await askAether({
       data: {
         accessCode: await accessCode(),
-        messages: toChatPayload(store().messages),
+        messages: chatMessages,
         language: s.settings.language,
+        phase: "plan",
       },
     });
   } catch {
@@ -358,8 +398,13 @@ async function runTurn(text: string, id: number) {
     return;
   }
 
+  const collectedActions: PhoneAction[] = [];
   let spoken = reply.text;
-  if (reply.actions.length) {
+  let outcomes: ToolOutcome[] = [];
+  let round = 0;
+
+  while (reply.ok && reply.actions.length > 0 && round < MAX_AGENT_ROUNDS) {
+    round += 1;
     step(
       `Working out ${reply.actions.length === 1 ? "an action" : `${reply.actions.length} actions`} on the phone`,
     );
@@ -369,15 +414,55 @@ async function runTurn(text: string, id: number) {
     });
     if (id !== runId) return;
 
-    const okMsgs = results.filter((r) => r.ok).map((r) => r.message);
-    const failMsgs = results.filter((r) => !r.ok).map((r) => r.message);
-    if (okMsgs.length && !failMsgs.length) {
-      spoken = okMsgs.join(" ");
-    } else if (failMsgs.length && !okMsgs.length) {
-      spoken = failMsgs.join(" ");
-    } else if (okMsgs.length || failMsgs.length) {
-      spoken = [...okMsgs, ...failMsgs].join(" ");
+    collectedActions.push(...reply.actions);
+    outcomes = results.map((r, i) => ({
+      ok: r.ok,
+      message: r.message,
+      action: reply.actions[i],
+    }));
+
+    step(round < MAX_AGENT_ROUNDS ? "Checking the results" : "Answering");
+    try {
+      reply = await askAether({
+        data: {
+          accessCode: await accessCode(),
+          messages: chatMessages,
+          language: s.settings.language,
+          toolResults: outcomes.map((o) => ({
+            ok: o.ok,
+            message: o.message,
+            data: o.data,
+            action: o.action
+              ? {
+                  action: o.action.action,
+                  value: o.action.value,
+                  target: o.action.target,
+                  extra: o.action.extra,
+                }
+              : undefined,
+          })),
+          phase: round >= MAX_AGENT_ROUNDS - 1 ? "finalize" : "plan",
+        },
+      });
+    } catch {
+      const okMsgs = outcomes.filter((o) => o.ok).map((o) => o.message);
+      const failMsgs = outcomes.filter((o) => !o.ok).map((o) => o.message);
+      spoken = [...okMsgs, ...failMsgs].join(" ") || spoken;
+      break;
     }
+    if (id !== runId) return;
+    if (!reply.ok) {
+      const okMsgs = outcomes.filter((o) => o.ok).map((o) => o.message);
+      const failMsgs = outcomes.filter((o) => !o.ok).map((o) => o.message);
+      spoken = [...okMsgs, ...failMsgs].join(" ") || spoken;
+      break;
+    }
+    spoken = reply.text;
+    if (!reply.actions.length) break;
+  }
+
+  if ((!spoken || !spoken.trim()) && outcomes.length) {
+    spoken = outcomes.map((o) => o.message).join(" ");
   }
 
   step("Answering");
@@ -386,7 +471,7 @@ async function runTurn(text: string, id: number) {
     role: "assistant",
     text: spoken,
     at: Date.now(),
-    actions: reply.actions,
+    actions: collectedActions.length ? collectedActions : undefined,
     trace: store().steps.slice(-8),
   });
 
