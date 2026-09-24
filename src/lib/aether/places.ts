@@ -38,7 +38,7 @@ const QUERY_ALIASES: Record<string, string> = {
 
 function normalizeQuery(raw: string): string {
   const key = raw.trim().toLowerCase();
-  return QUERY_ALIASES[key] ?? key || "shop";
+  return QUERY_ALIASES[key] ?? (key || "shop");
 }
 
 function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -75,10 +75,6 @@ function formatMessage(query: string, places: PlaceHit[]): string {
   return `${head} Also: ${bits.slice(1).map((b) => b.replace(/^\d+\.\s*/, "")).join("; ")}.`;
 }
 
-/**
- * Search nearby places around lat/lng.
- * Uses Nominatim with a bounded viewbox. Respects Nominatim usage policy (User-Agent).
- */
 export async function fetchNearbyPlaces(
   lat: number,
   lng: number,
@@ -180,7 +176,6 @@ export async function fetchNearbyPlaces(
   }
 }
 
-/** Pure distance helper for tests. */
 export function distanceMeters(
   lat1: number,
   lon1: number,
