@@ -101,3 +101,39 @@ export type ActionResult = {
   message: string;
   native: boolean;
 };
+
+/** Orchestration task model for multi-intent turns. */
+export type TaskStatus = "pending" | "running" | "completed" | "failed" | "blocked";
+
+export type TaskType =
+  | "date"
+  | "time"
+  | "location"
+  | "weather"
+  | "nearby"
+  | "phone_action"
+  | "llm";
+
+export type TaskResult = {
+  ok: boolean;
+  message: string;
+  /** Sanitized payload for synthesis; never send raw GPS to the model. */
+  data?: Record<string, unknown>;
+};
+
+export type Task = {
+  id: string;
+  type: TaskType;
+  input?: unknown;
+  dependsOn?: string[];
+  status: TaskStatus;
+  result?: TaskResult;
+  error?: string;
+  /** When type is phone_action */
+  phoneAction?: PhoneAction;
+  label?: string;
+};
+
+/** Safety bound — not the old arbitrary 3-action ceiling. */
+export const MAX_TASKS_PER_TURN = 12;
+export const MAX_CONCURRENT_TASKS = 4;
