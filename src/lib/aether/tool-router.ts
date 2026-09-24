@@ -1,6 +1,5 @@
 /**
- * Tool router — routes info tools vs phone_action to the right implementation.
- * Application remains the execution authority.
+ * Tool router — Native Android, information tools, web, and optional MCP.
  */
 
 import type { PhoneAction, ToolCall, ToolName, ToolResult } from "./types";
@@ -34,11 +33,20 @@ export async function routeTool(call: ToolCall, opts: RouterOptions = {}): Promi
     return { ok: false, tool: call.tool, callId: call.id, error: "Cancelled.", retryable: false };
   }
 
+  const mcpName =
+    typeof call.args?.mcpFullName === "string"
+      ? call.args.mcpFullName
+      : typeof call.args?.fullName === "string"
+        ? call.args.fullName
+        : null;
+
   etaLog(`Tool ${call.tool}`, { callId: call.id });
 
   try {
-    const result = await withTimeout(dispatch(call), TOOL_TIMEOUT_MS, call.tool);
-    return result;
+    if (mcpName) {
+      return await withTimeout(dispatchMcp(String(mcpName), call, opts), TOOL_TIMEOUT_MS, "mcp");
+    }
+    return await withTimeout(dispatch(call), TOOL_TIMEOUT_MS, call.tool);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Tool failed.";
     return {
@@ -51,45 +59,94 @@ export async function routeTool(call: ToolCall, opts: RouterOptions = {}): Promi
   }
 }
 
+async function dispatchMcp(
+  fullName: string,
+  call: ToolCall,
+  opts: RouterOptions,
+): Promise<ToolResult> {
+  const { invokeMcpTool, isMcpToolName } = await import("./mcp/manager");
+  if (!isMcpToolName(fullName)) {
+    return {
+      ok: false,
+      tool: call.tool,
+      callId: call.id,
+      error: "Invalid MCP tool name.",
+      retryable: false,
+    };
+  }
+  const args = { ...(call.args ?? {}) };
+  delete args.mcpFullName;
+  delete args.fullName;
+  const res = await invokeMcpTool(fullName, args, { signal: opts.signal });
+  if (!res.ok) {
+    return {
+      ok: false,
+      tool: call.tool,
+      callId: call.id,
+      error: res.error,
+      retryable: res.retryable,
+      data: { source: "mcp", server: res.server, tool: res.tool },
+    };
+  }
+  const data = res.data as { summary?: string } | undefined;
+  return {
+    ok: true,
+    tool: call.tool,
+    callId: call.id,
+    message: data?.summary ?? "MCP tool completed.",
+    data: { source: "mcp", server: res.server, tool: res.tool, untrusted: true },
+  };
+}
+
 async function dispatch(call: ToolCall): Promise<ToolResult> {
   switch (call.tool) {
-    case "get_date": {
-      const { formatDateMessage, getLocalDateTime } = await import("./datetime");
-      const info = getLocalDateTime();
-      return {
-        ok: true,
-        tool: "get_date",
-        callId: call.id,
-        message: formatDateMessage(info),
-        data: { date: info.dateLabel, timezone: info.timezone, iso: info.iso },
-      };
-    }
+    case "get_current_datetime":
+    case "get_date":
     case "get_time": {
-      const { formatTimeMessage, getLocalDateTime } = await import("./datetime");
+      const { formatDateMessage, formatTimeMessage, getLocalDateTime } = await import("./datetime");
       const info = getLocalDateTime();
+      if (call.tool === "get_current_datetime") {
+        return {
+          ok: true,
+          tool: call.tool,
+          callId: call.id,
+          message: `${formatDateMessage(info)} ${formatTimeMessage(info)}`,
+          data: {
+            date: info.dateLabel,
+            time: info.timeLabel,
+            timezone: info.timezone,
+            iso: info.iso,
+            dayOfWeek: info.dateLabel.split(",")[0],
+          },
+        };
+      }
+      if (call.tool === "get_date") {
+        return {
+          ok: true,
+          tool: call.tool,
+          callId: call.id,
+          message: formatDateMessage(info),
+          data: { date: info.dateLabel, timezone: info.timezone, iso: info.iso },
+        };
+      }
       return {
         ok: true,
-        tool: "get_time",
+        tool: call.tool,
         callId: call.id,
         message: formatTimeMessage(info),
         data: { time: info.timeLabel, timezone: info.timezone, iso: info.iso },
       };
     }
+    case "get_current_location":
     case "get_location": {
       const { getUserLocation } = await import("./location");
       const fix = await getUserLocation();
       if (!fix.ok) {
-        return {
-          ok: false,
-          tool: "get_location",
-          callId: call.id,
-          error: fix.message,
-          retryable: true,
-        };
+        return { ok: false, tool: call.tool, callId: call.id, error: fix.message, retryable: true };
       }
       return {
         ok: true,
-        tool: "get_location",
+        tool: call.tool,
         callId: call.id,
         message: fix.message,
         data: { approx: fix.approx, lat: fix.lat, lng: fix.lng },
@@ -104,7 +161,7 @@ async function dispatch(call: ToolCall): Promise<ToolResult> {
       if (!result.ok) {
         return {
           ok: false,
-          tool: "get_weather",
+          tool: call.tool,
           callId: call.id,
           error: result.message,
           retryable: true,
@@ -112,16 +169,20 @@ async function dispatch(call: ToolCall): Promise<ToolResult> {
       }
       return {
         ok: true,
-        tool: "get_weather",
+        tool: call.tool,
         callId: call.id,
         message: result.message,
         data: {
           temperatureC: result.snapshot.temperatureC,
+          feelsLikeC: result.snapshot.feelsLikeC,
+          humidityPct: result.snapshot.humidityPct,
+          windKmh: result.snapshot.windKmh,
           condition: result.snapshot.condition,
           source: result.snapshot.source,
         },
       };
     }
+    case "search_nearby_places":
     case "search_nearby": {
       const { fetchNearbyPlaces } = await import("./places");
       const lat = Number(call.args?.lat);
@@ -131,7 +192,7 @@ async function dispatch(call: ToolCall): Promise<ToolResult> {
       if (!result.ok) {
         return {
           ok: false,
-          tool: "search_nearby",
+          tool: call.tool,
           callId: call.id,
           error: result.message,
           retryable: true,
@@ -139,7 +200,7 @@ async function dispatch(call: ToolCall): Promise<ToolResult> {
       }
       return {
         ok: true,
-        tool: "search_nearby",
+        tool: call.tool,
         callId: call.id,
         message: result.message,
         data: {
@@ -153,8 +214,36 @@ async function dispatch(call: ToolCall): Promise<ToolResult> {
             name: p.name,
             distanceM: p.distanceM,
             category: p.category,
+            address: p.address,
           })),
         },
+      };
+    }
+    case "web_search": {
+      const { webSearch } = await import("./web-search");
+      const q = String(call.args?.query ?? call.args?.q ?? "");
+      const result = await webSearch(q);
+      if (!result.ok) {
+        return { ok: false, tool: "web_search", callId: call.id, error: result.message, retryable: true };
+      }
+      return {
+        ok: true,
+        tool: "web_search",
+        callId: call.id,
+        message: result.message,
+        data: { query: result.query, hits: result.hits, untrusted: true },
+      };
+    }
+    case "open_url": {
+      const url = String(call.args?.url ?? call.phoneAction?.target ?? "");
+      const { runPhoneAction } = await import("./native");
+      const res = await runPhoneAction({ action: "open_url", target: url });
+      return {
+        ok: res.ok,
+        tool: "open_url",
+        callId: call.id,
+        message: res.message,
+        error: res.ok ? undefined : res.message,
       };
     }
     case "phone_action": {
@@ -197,11 +286,11 @@ export function toolForTaskType(type: string): ToolName | undefined {
     case "time":
       return "get_time";
     case "location":
-      return "get_location";
+      return "get_current_location";
     case "weather":
       return "get_weather";
     case "nearby":
-      return "search_nearby";
+      return "search_nearby_places";
     case "phone_action":
       return "phone_action";
     default:
