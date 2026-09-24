@@ -103,7 +103,7 @@ export type ActionResult = {
 };
 
 /** Orchestration task model for multi-intent turns. */
-export type TaskStatus = "pending" | "running" | "completed" | "failed" | "blocked";
+export type TaskStatus = "pending" | "running" | "completed" | "failed" | "blocked" | "cancelled";
 
 export type TaskType =
   | "date"
@@ -114,26 +114,77 @@ export type TaskType =
   | "phone_action"
   | "llm";
 
+/** Capability / tool name used by the tool router. */
+export type ToolName =
+  | "get_date"
+  | "get_time"
+  | "get_location"
+  | "get_weather"
+  | "search_nearby"
+  | "phone_action";
+
 export type TaskResult = {
   ok: boolean;
   message: string;
   /** Sanitized payload for synthesis; never send raw GPS to the model. */
   data?: Record<string, unknown>;
+  retryable?: boolean;
+};
+
+/** Explicit dependency edge: task `from` must complete before `to`. */
+export type TaskDependency = {
+  from: string;
+  to: string;
 };
 
 export type Task = {
   id: string;
   type: TaskType;
+  /** Human-readable description for traces */
+  description?: string;
+  /** Tool capability this task routes to */
+  tool?: ToolName;
   input?: unknown;
   dependsOn?: string[];
   status: TaskStatus;
   result?: TaskResult;
   error?: string;
+  retryable?: boolean;
   /** When type is phone_action */
   phoneAction?: PhoneAction;
   label?: string;
 };
 
-/** Safety bound — not the old arbitrary 3-action ceiling. */
+export type ToolCall = {
+  id: string;
+  tool: ToolName;
+  args?: Record<string, unknown>;
+  phoneAction?: PhoneAction;
+};
+
+export type ToolResult = {
+  ok: boolean;
+  tool: ToolName;
+  callId?: string;
+  data?: Record<string, unknown>;
+  message?: string;
+  error?: string;
+  retryable?: boolean;
+};
+
+export type AgentState = {
+  turnId: string;
+  round: number;
+  tasks: Task[];
+  lastToolResults: ToolResult[];
+  cancelled: boolean;
+  startedAt: number;
+};
+
+/** Safety bounds — not the old arbitrary 3-action ceiling. */
 export const MAX_TASKS_PER_TURN = 12;
 export const MAX_CONCURRENT_TASKS = 4;
+export const MAX_AGENT_ROUNDS = 3;
+export const MAX_TOOL_RETRIES = 1;
+export const TOOL_TIMEOUT_MS = 15_000;
+export const TURN_TIMEOUT_MS = 90_000;
