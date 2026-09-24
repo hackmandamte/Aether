@@ -16,6 +16,8 @@ import { useAether } from "@/lib/aether/store";
 import { LANGUAGES, VOICES, resolveVoiceId } from "@/lib/aether/types";
 import { speakWithDevice } from "@/lib/aether/voice";
 import { Button } from "@/components/ui/button";
+import { ConnectorsPanel } from "@/components/aether/connectors-panel";
+import { TERMS_BODY, TERMS_TITLE, TERMS_VERSION } from "@/lib/aether/terms";
 import { cn } from "@/lib/utils";
 
 export function Drawer() {
@@ -26,11 +28,14 @@ export function Drawer() {
   const setLanguage = useAether((s) => s.setLanguage);
   const setTheme = useAether((s) => s.setTheme);
   const setVoice = useAether((s) => s.setVoice);
+  const setBrainMode = useAether((s) => s.setBrainMode);
   const device = useAether((s) => s.device);
   const notes = useAether((s) => s.notes);
   const deleteNote = useAether((s) => s.deleteNote);
 
-  const [section, setSection] = useState<"main" | "settings" | "notes">("main");
+  const [section, setSection] = useState<
+    "main" | "settings" | "notes" | "connectors" | "about" | "brain"
+  >("main");
   const [previewing, setPreviewing] = useState(false);
 
   function newChat() {
@@ -78,20 +83,20 @@ export function Drawer() {
       >
         <div className="flex items-center justify-between border-b border-border px-4 py-4 pt-[max(1rem,env(safe-area-inset-top))]">
           <div>
-            <p className="font-display text-lg font-medium tracking-tight">ETA</p>
-            <p className="text-[11px] text-faint">Everyday Task Assistant</p>
+            <p className="text-sm font-semibold tracking-tight">ETA</p>
+            <p className="text-xs text-faint">Everyday Tasks Assistant</p>
           </div>
           <button
             type="button"
             onClick={() => setDrawerOpen(false)}
-            className="grid size-10 place-items-center rounded-full text-muted hover:bg-subtle hover:text-fg"
+            className="grid size-9 place-items-center rounded-full text-muted hover:bg-subtle"
             aria-label="Close menu"
           >
-            <X className="size-5" />
+            <X className="size-4" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-3 py-3">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-3">
           {section === "main" ? (
             <nav className="space-y-1">
               <DrawerRow icon={MessageSquarePlus} label="New chat" onClick={newChat} />
@@ -99,6 +104,21 @@ export function Drawer() {
                 icon={Settings2}
                 label="Settings"
                 onClick={() => setSection("settings")}
+              />
+              <DrawerRow
+                icon={Settings2}
+                label="AI Brain"
+                onClick={() => setSection("brain")}
+              />
+              <DrawerRow
+                icon={Settings2}
+                label="Connectors"
+                onClick={() => setSection("connectors")}
+              />
+              <DrawerRow
+                icon={Settings2}
+                label="About & Terms"
+                onClick={() => setSection("about")}
               />
               <DrawerRow
                 icon={StickyNote}
@@ -121,73 +141,30 @@ export function Drawer() {
               />
               <DrawerRow
                 icon={Wifi}
-                label="Wi-Fi"
+                label="Wi-Fi settings"
                 onClick={() => void runPhoneAction({ action: "wifi" })}
               />
               <DrawerRow
                 icon={Bluetooth}
-                label="Bluetooth"
+                label="Bluetooth settings"
                 onClick={() => void runPhoneAction({ action: "bluetooth" })}
               />
-
-              <div className="mt-3 space-y-4 rounded-2xl bg-subtle/80 px-3 py-3">
-                <label className="block">
-                  <span className="mb-2 flex items-center gap-2 text-xs text-muted">
-                    <Volume2 className="size-3.5" /> Volume · {device.volume}/15
-                  </span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={15}
-                    value={device.volume}
-                    onChange={(e) =>
-                      void runPhoneAction({
-                        action: "volume",
-                        value: Number(e.target.value),
-                      })
-                    }
-                    className="w-full accent-accent"
-                  />
-                </label>
-                <label className="block">
-                  <span className="mb-2 flex items-center gap-2 text-xs text-muted">
-                    <Sun className="size-3.5" /> Brightness · {device.brightness}%
-                  </span>
-                  <input
-                    type="range"
-                    min={5}
-                    max={100}
-                    value={device.brightness}
-                    onChange={(e) =>
-                      void runPhoneAction({
-                        action: "brightness",
-                        value: Number(e.target.value),
-                      })
-                    }
-                    className="w-full accent-accent"
-                  />
-                </label>
-              </div>
+              <DrawerRow
+                icon={Volume2}
+                label={`Volume ${device.volume}`}
+                onClick={() => void runPhoneAction({ action: "volume", value: device.volume })}
+              />
             </nav>
           ) : null}
 
           {section === "settings" ? (
             <div className="space-y-5 px-1">
-              <button
-                type="button"
-                onClick={() => setSection("main")}
-                className="text-sm text-muted hover:text-fg"
-              >
-                ← Back
+              <button type="button" onClick={() => setSection("main")} className="text-sm text-faint">
+                Back
               </button>
-
               <div>
                 <p className="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-faint">
                   Voice
-                </p>
-                <p className="mb-3 text-xs text-muted">
-                  Uses online speech when available, with your phone as backup. Tap a style to
-                  select and hear a sample.
                 </p>
                 <div className="grid grid-cols-2 gap-2">
                   {VOICES.map((v) => (
@@ -197,14 +174,13 @@ export function Drawer() {
                       disabled={previewing}
                       onClick={() => void previewVoice(v.id)}
                       className={cn(
-                        "rounded-xl border px-3 py-2.5 text-left transition-colors",
+                        "rounded-xl border px-3 py-2 text-left text-sm transition",
                         activeVoice === v.id
-                          ? "border-accent bg-accent text-accent-fg"
-                          : "border-border/70 bg-subtle/60 text-fg hover:bg-subtle",
-                        previewing && "opacity-60",
+                          ? "border-accent bg-accent/10"
+                          : "border-border hover:bg-subtle",
                       )}
                     >
-                      <span className="block text-sm font-medium">{v.label}</span>
+                      <span className="font-medium">{v.label}</span>
                       <span
                         className={cn(
                           "mt-0.5 block text-[11px]",
@@ -244,9 +220,7 @@ export function Drawer() {
                 <p className="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-faint">
                   Language
                 </p>
-                <p className="mb-2 text-xs text-muted">
-                  Speech uses this language when available.
-                </p>
+                <p className="mb-2 text-xs text-muted">Speech uses this language when available.</p>
                 <div className="flex flex-wrap gap-2">
                   {LANGUAGES.map((l) => (
                     <Button
@@ -273,35 +247,82 @@ export function Drawer() {
             </div>
           ) : null}
 
+          {section === "brain" ? (
+            <div className="space-y-4 px-1">
+              <button type="button" onClick={() => setSection("main")} className="text-sm text-faint">
+                Back
+              </button>
+              <p className="text-sm font-medium">AI Brain</p>
+              <p className="text-xs text-muted">
+                Cloud uses xAI/Groq. Local needs an APK with on-device Qwen. Hybrid picks
+                automatically.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {(["cloud", "local", "hybrid"] as const).map((m) => (
+                  <Button
+                    key={m}
+                    size="sm"
+                    variant={(settings.brainMode ?? "hybrid") === m ? "primary" : "quiet"}
+                    onClick={() => setBrainMode(m)}
+                  >
+                    {m === "cloud" ? "Cloud" : m === "local" ? "Local" : "Hybrid"}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {section === "connectors" ? (
+            <>
+              <div className="flex items-center gap-2 border-b border-border px-1 py-2">
+                <button
+                  type="button"
+                  className="text-sm text-faint"
+                  onClick={() => setSection("main")}
+                >
+                  Back
+                </button>
+                <span className="text-sm font-medium">Connectors</span>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                <ConnectorsPanel />
+              </div>
+            </>
+          ) : null}
+
+          {section === "about" ? (
+            <div className="space-y-3 px-1 pb-6">
+              <button type="button" onClick={() => setSection("main")} className="text-sm text-faint">
+                Back
+              </button>
+              <p className="text-sm font-medium">{TERMS_TITLE}</p>
+              <p className="text-xs text-faint">Version {TERMS_VERSION}</p>
+              <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed text-muted">
+                {TERMS_BODY}
+              </pre>
+            </div>
+          ) : null}
+
           {section === "notes" ? (
             <div className="space-y-3 px-1">
-              <button
-                type="button"
-                onClick={() => setSection("main")}
-                className="text-sm text-muted hover:text-fg"
-              >
-                ← Back
+              <button type="button" onClick={() => setSection("main")} className="text-sm text-faint">
+                Back
               </button>
               {!notes.length ? (
-                <p className="text-sm text-muted">No notes yet. Ask ETA to remember something.</p>
+                <p className="text-sm text-muted">No notes yet.</p>
               ) : (
-                <ul className="space-y-2">
-                  {notes.map((n) => (
-                    <li
-                      key={n.id}
-                      className="flex items-start justify-between gap-2 rounded-xl bg-subtle px-3 py-2.5 text-sm"
+                notes.map((n) => (
+                  <div key={n.id} className="rounded-xl border border-border p-3 text-sm">
+                    <p>{n.text}</p>
+                    <button
+                      type="button"
+                      className="mt-2 text-xs text-faint"
+                      onClick={() => deleteNote(n.id)}
                     >
-                      <span className="leading-relaxed">{n.text}</span>
-                      <button
-                        type="button"
-                        onClick={() => deleteNote(n.id)}
-                        className="shrink-0 text-xs text-faint hover:text-danger"
-                      >
-                        Delete
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+                      Delete
+                    </button>
+                  </div>
+                ))
               )}
             </div>
           ) : null}
@@ -327,12 +348,12 @@ function DrawerRow({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm transition-colors",
-        active ? "bg-accent text-accent-fg" : "text-fg hover:bg-subtle",
+        "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition",
+        active ? "bg-accent/15 text-fg" : "text-muted hover:bg-subtle hover:text-fg",
       )}
     >
-      <Icon className="size-5 shrink-0 opacity-80" strokeWidth={1.75} />
-      <span className="font-medium">{label}</span>
+      <Icon className="size-4 shrink-0" strokeWidth={1.75} />
+      <span className="min-w-0 flex-1 truncate">{label}</span>
     </button>
   );
 }
