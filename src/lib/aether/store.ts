@@ -14,6 +14,7 @@ import {
 
 export type ListenMode = "idle" | "recording" | "thinking" | "speaking";
 export type ThemeId = "dark" | "light";
+export type BrainModeSetting = "cloud" | "local" | "hybrid";
 
 type Settings = {
   voice: VoiceId;
@@ -23,6 +24,7 @@ type Settings = {
   theme: ThemeId;
   preferOnDeviceSpeech: boolean;
   termsAcceptedVersion: string;
+  brainMode: BrainModeSetting;
 };
 
 type Device = {
@@ -53,6 +55,7 @@ type AetherState = {
   setPreferOnDeviceSpeech: (prefer: boolean) => void;
   setOnboarded: () => void;
   setTermsAccepted: (version: string) => void;
+  setBrainMode: (mode: BrainModeSetting) => void;
   patchDevice: (patch: Partial<Device>) => void;
   addMessage: (msg: ChatMessage) => void;
   clearMessages: () => void;
@@ -82,6 +85,7 @@ export const useAether = create<AetherState>()(
         theme: "dark",
         preferOnDeviceSpeech: true,
         termsAcceptedVersion: "",
+        brainMode: "hybrid",
       },
       device: {
         flashlight: false,
@@ -114,6 +118,8 @@ export const useAether = create<AetherState>()(
         set((s) => ({ settings: { ...s.settings, onboarded: true } })),
       setTermsAccepted: (version) =>
         set((s) => ({ settings: { ...s.settings, termsAcceptedVersion: version } })),
+      setBrainMode: (brainMode) =>
+        set((s) => ({ settings: { ...s.settings, brainMode } })),
       patchDevice: (patch) =>
         set((s) => ({ device: { ...s.device, ...patch } })),
       addMessage: (msg) =>
@@ -175,6 +181,7 @@ export const useAether = create<AetherState>()(
           ...s.settings,
           voice: resolveVoiceId(s.settings.voice),
           termsAcceptedVersion: s.settings.termsAcceptedVersion ?? "",
+          brainMode: s.settings.brainMode ?? "hybrid",
         },
         device: {
           flashlight: false,
