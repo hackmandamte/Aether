@@ -500,7 +500,7 @@ export async function runPhoneActions(
   } = {},
 ) {
   const results: ActionResult[] = [];
-  for (const action of actions.slice(0, 4)) {
+  for (const action of actions.slice(0, 12)) {
     if (opts.shouldContinue && !opts.shouldContinue()) break;
     opts.onAction?.(action);
     results.push(await runPhoneAction(action));
