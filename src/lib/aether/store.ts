@@ -21,8 +21,8 @@ type Settings = {
   wakeEnabled: boolean;
   onboarded: boolean;
   theme: ThemeId;
-  /** Prefer on-device STT/TTS when the phone supports it */
   preferOnDeviceSpeech: boolean;
+  termsAcceptedVersion: string;
 };
 
 type Device = {
@@ -52,6 +52,7 @@ type AetherState = {
   setWakeEnabled: (wakeEnabled: boolean) => void;
   setPreferOnDeviceSpeech: (prefer: boolean) => void;
   setOnboarded: () => void;
+  setTermsAccepted: (version: string) => void;
   patchDevice: (patch: Partial<Device>) => void;
   addMessage: (msg: ChatMessage) => void;
   clearMessages: () => void;
@@ -80,6 +81,7 @@ export const useAether = create<AetherState>()(
         onboarded: false,
         theme: "dark",
         preferOnDeviceSpeech: true,
+        termsAcceptedVersion: "",
       },
       device: {
         flashlight: false,
@@ -110,6 +112,8 @@ export const useAether = create<AetherState>()(
         set((s) => ({ settings: { ...s.settings, preferOnDeviceSpeech } })),
       setOnboarded: () =>
         set((s) => ({ settings: { ...s.settings, onboarded: true } })),
+      setTermsAccepted: (version) =>
+        set((s) => ({ settings: { ...s.settings, termsAcceptedVersion: version } })),
       patchDevice: (patch) =>
         set((s) => ({ device: { ...s.device, ...patch } })),
       addMessage: (msg) =>
@@ -170,6 +174,7 @@ export const useAether = create<AetherState>()(
         settings: {
           ...s.settings,
           voice: resolveVoiceId(s.settings.voice),
+          termsAcceptedVersion: s.settings.termsAcceptedVersion ?? "",
         },
         device: {
           flashlight: false,
