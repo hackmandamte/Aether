@@ -7,6 +7,7 @@ import {
 import { setAccessCode } from "./access";
 import { useAether } from "./store";
 import type { ActionResult, PhoneAction } from "./types";
+import { allowPhoneAction } from "./security";
 
 type NativeChannel = {
   postMessage: (message: string) => void;
@@ -72,10 +73,6 @@ function postNative(body: Record<string, unknown>): Promise<NativeReply | null> 
   });
 }
 
-/**
- * APK expects: { id, action: { action, value?, target?, extra? } }
- * Nested object is required — a bare string action causes "Bad request".
- */
 function nativeExecute(action: PhoneAction): Promise<ActionResult | null> {
   const payload: Record<string, unknown> = { action: action.action };
   if (action.value !== undefined && action.value !== null) payload.value = String(action.value);
@@ -87,10 +84,6 @@ function nativeExecute(action: PhoneAction): Promise<ActionResult | null> {
 let nativeCode: string | null = null;
 let nativeCodeFetched = false;
 
-/**
- * Invisible unlock: the release APK is built with AETHER_ACCESS_CODE.
- * We pull it once from the native bridge and never show it in the UI.
- */
 export async function getNativeAccessCode(): Promise<string> {
   if (!isNativeBridge()) return "";
   if (nativeCodeFetched) return nativeCode ?? "";
@@ -224,6 +217,24 @@ export async function runPhoneAction(action: PhoneAction): Promise<ActionResult>
   const store = useAether.getState();
   let result: ActionResult;
   let applied: PhoneAction = action;
+
+  const gate = await allowPhoneAction(action, async (a) => {
+    if (typeof window === "undefined") return false;
+    const label =
+      a.action === "call"
+        ? `Place a call${a.target ? ` to ${a.target}` : ""}?`
+        : a.action === "sms"
+          ? `Send a message${a.target ? ` to ${a.target}` : ""}?`
+          : a.action === "navigate"
+            ? "Open navigation for this destination?"
+            : a.action === "lock"
+              ? "Lock the phone?"
+              : `Allow action: ${a.action}?`;
+    return window.confirm(label);
+  });
+  if (!gate.allowed) {
+    return { ok: false, native: false, message: gate.reason ?? "Action blocked." };
+  }
 
   if (action.action === "note" || action.action === "reminder") {
     result = runLocalAction(action);
