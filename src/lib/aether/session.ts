@@ -1,6 +1,13 @@
 import { getAccessCode } from "./access";
 import { askAether, hearAether, speakAether, toChatPayload } from "./ai";
 import { getNativeAccessCode, runPhoneActions } from "./native";
+import {
+  collectPhoneActions,
+  planTasks,
+  runTaskGraph,
+  shouldUseOrchestrator,
+  synthesizeReply,
+} from "./orchestrator";
 import { createVad } from "./silence";
 import { useAether } from "./store";
 import { resolveVoiceId, type PhoneAction } from "./types";
@@ -149,7 +156,7 @@ function watchForSilence(id: number, ctx: AudioContext | null) {
 function micErrorMessage(err: unknown): string {
   const name = err instanceof Error ? err.name : "";
   if (name === "NotAllowedError" || name === "SecurityError") {
-    return "Microphone is blocked. Allow it in Settings → Apps → Eta → Permissions.";
+    return "Microphone is blocked. Allow it in Settings \u2192 Apps \u2192 Eta \u2192 Permissions.";
   }
   if (name === "NotFoundError") return "No microphone found on this phone.";
   if (name === "NotReadableError") return "Another app is using the microphone. Close it and try again.";
@@ -184,7 +191,7 @@ export async function startListening() {
   s.setListen("recording");
 
   if (s.settings.preferOnDeviceSpeech && hasOnDeviceStt()) {
-    step("Listening on this phone…");
+    step("Listening on this phone\u2026");
     try {
       const text = await recognizeOnce(s.settings.language);
       if (id !== runId) return;
@@ -233,7 +240,7 @@ export async function startListening() {
       if (e.data.size) chunks.push(e.data);
     };
     recorder.start(250);
-    step("Listening… tap the mic when you're done");
+    step("Listening\u2026 tap the mic when you're done");
     watchForSilence(id, ctx);
   } catch (err) {
     void ctx?.close().catch(() => undefined);
@@ -286,6 +293,11 @@ export async function sendText(text: string) {
   await runTurn(text, id);
 }
 
+/**
+ * Shared turn path for typed and voice input.
+ * Multi-intent messages go through the orchestrator; otherwise the existing
+ * LLM + phone_action pipeline runs (now without a hard 3-action ceiling).
+ */
 async function runTurn(text: string, id: number) {
   const trimmed = text.trim();
   if (!trimmed) {
@@ -297,6 +309,35 @@ async function runTurn(text: string, id: number) {
   s.addMessage({ id: crypto.randomUUID(), role: "user", text: trimmed, at: Date.now() });
   s.setListen("thinking");
   step("Thinking about it");
+
+  const planned = planTasks(trimmed, { language: s.settings.language });
+  if (shouldUseOrchestrator(planned)) {
+    step(
+      planned.length === 1
+        ? "Working on your request"
+        : `Planning ${planned.length} tasks`,
+    );
+    const finished = await runTaskGraph(planned, {
+      shouldContinue: () => id === runId,
+      onStep: (msg) => step(msg),
+    });
+    if (id !== runId) return;
+
+    const spoken = synthesizeReply(finished);
+    const actions = collectPhoneActions(finished);
+
+    step("Putting it together");
+    store().addMessage({
+      id: crypto.randomUUID(),
+      role: "assistant",
+      text: spoken,
+      at: Date.now(),
+      actions: actions.length ? actions : undefined,
+      trace: store().steps.slice(-8),
+    });
+    await speak(spoken, id);
+    return;
+  }
 
   let reply: Awaited<ReturnType<typeof askAether>>;
   try {
@@ -374,8 +415,6 @@ export async function speak(text: string, id: number = ++runId) {
   try {
     if (id !== runId) return;
 
-    // Non-English: always prefer online neural voices so we speak the real
-    // language — device TTS often only has English and fakes an accent.
     const forceOnlineVoice = language !== "en";
 
     if (s.settings.preferOnDeviceSpeech && !forceOnlineVoice) {
