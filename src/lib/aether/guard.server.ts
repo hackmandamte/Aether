@@ -3,20 +3,14 @@ import { createHash } from "node:crypto";
 import { assertSameSiteRequest } from "@/lib/auth/isolation.server";
 import { env } from "@/lib/env.server";
 import { createRateLimiter, safeEqual } from "./guard-core.server";
+import { signingSecret, verifyDeviceToken } from "./device-token.server";
 
 /**
- * Gate for every server function that spends the AI key.
+ * Gate for AI spend only — NOT remote phone control.
  *
- * Fail closed: no valid codes configured → refuse everything.
- *
- * Codes (any one matches):
- *   AETHER_ACCESS_CODE=single-code
- *   AETHER_ACCESS_CODES=code1,code2,code3   (multi-user; each code is a principal)
- *
- * Rate limits:
- *   - Wrong guesses: per client IP (8 / 10 min)
- *   - Paid calls: per (principal + IP) so one user cannot burn the whole budget alone as easily
- *   - Global paid ceiling per IP: 90 / min (shared safety net)
+ * Credentials:
+ *   1. Per-device token (eta1.… ) — preferred; signing key never in APK
+ *   2. Legacy AETHER_ACCESS_CODE(S) — migration only
  */
 
 const MIN_CODE_LENGTH = 16;
@@ -24,6 +18,7 @@ const MIN_CODE_LENGTH = 16;
 const failedAttempts = createRateLimiter(8, 10 * 60_000);
 const paidPerPrincipal = createRateLimiter(45, 60_000);
 const paidPerIp = createRateLimiter(90, 60_000);
+const enrollPerIp = createRateLimiter(20, 60 * 60_000);
 
 export type Gate = { ok: true; principal: string } | { ok: false; error: string };
 
@@ -35,7 +30,6 @@ function clientIp(): string {
   return ip.slice(0, 64);
 }
 
-/** Collect configured access codes (deduped, min length enforced). */
 export function configuredAccessCodes(): string[] {
   const out: string[] = [];
   const single = env("AETHER_ACCESS_CODE");
@@ -55,6 +49,10 @@ function principalId(code: string): string {
   return createHash("sha256").update(code).digest("hex").slice(0, 16);
 }
 
+function authConfigured(): boolean {
+  return Boolean(signingSecret()) || configuredAccessCodes().length > 0;
+}
+
 export function authorize(accessCode: string | undefined): Gate {
   try {
     assertSameSiteRequest();
@@ -62,10 +60,9 @@ export function authorize(accessCode: string | undefined): Gate {
     return { ok: false, error: "Request blocked." };
   }
 
-  const codes = configuredAccessCodes();
-  if (codes.length === 0) {
+  if (!authConfigured()) {
     console.error(
-      `[aether] No access codes configured (AETHER_ACCESS_CODE or AETHER_ACCESS_CODES, each ≥ ${MIN_CODE_LENGTH} chars); refusing requests.`,
+      "[aether] No AETHER_SIGNING_SECRET / AETHER_ACCESS_CODE configured; refusing requests.",
     );
     return { ok: false, error: "E.T.A isn't set up on the server yet." };
   }
@@ -77,11 +74,25 @@ export function authorize(accessCode: string | undefined): Gate {
 
   if (!accessCode || typeof accessCode !== "string") {
     failedAttempts.take(ip);
-    return { ok: false, error: "Wrong or missing access code. Add it in Settings." };
+    return { ok: false, error: "Missing device credentials. Reopen the app to enroll." };
   }
 
-  const submitted = accessCode.slice(0, 256);
+  const submitted = accessCode.slice(0, 512);
 
+  if (submitted.startsWith("eta1.")) {
+    const verified = verifyDeviceToken(submitted);
+    if (!verified.ok) {
+      failedAttempts.take(ip);
+      console.warn(`[aether] device token fail ip=${ip}`);
+      return { ok: false, error: "Device session expired. Reopen the app." };
+    }
+    const paidKey = `${verified.principal}:${ip}`;
+    if (!paidPerIp.take(ip)) return { ok: false, error: "Slow down a little." };
+    if (!paidPerPrincipal.take(paidKey)) return { ok: false, error: "Slow down a little." };
+    return { ok: true, principal: verified.principal };
+  }
+
+  const codes = configuredAccessCodes();
   let matched: string | null = null;
   for (const expected of codes) {
     if (safeEqual(submitted, expected)) {
@@ -93,7 +104,7 @@ export function authorize(accessCode: string | undefined): Gate {
   if (!matched) {
     failedAttempts.take(ip);
     console.warn(`[aether] auth fail ip=${ip}`);
-    return { ok: false, error: "Wrong or missing access code. Add it in Settings." };
+    return { ok: false, error: "Wrong or missing credentials." };
   }
 
   const principal = principalId(matched);
@@ -107,4 +118,23 @@ export function authorize(accessCode: string | undefined): Gate {
   }
 
   return { ok: true, principal };
+}
+
+export function allowDeviceEnroll(): Gate {
+  try {
+    assertSameSiteRequest();
+  } catch {
+    return { ok: false, error: "Request blocked." };
+  }
+  if (!signingSecret()) {
+    return {
+      ok: false,
+      error: "Server has no signing secret. Set AETHER_SIGNING_SECRET or AETHER_ACCESS_CODE.",
+    };
+  }
+  const ip = clientIp();
+  if (!enrollPerIp.take(ip)) {
+    return { ok: false, error: "Too many device enrollments from this network. Try later." };
+  }
+  return { ok: true, principal: "enroll" };
 }
