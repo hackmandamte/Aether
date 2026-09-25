@@ -83,6 +83,14 @@ function fail(message: string) {
 }
 
 async function accessCode(): Promise<string> {
+  // Prefer per-device token (server-signed). Legacy APK code is fallback only.
+  try {
+    const { ensureDeviceCredential } = await import("./device-enroll");
+    const cred = await ensureDeviceCredential();
+    if (cred) return cred;
+  } catch {
+    /* fall through */
+  }
   try {
     const native = await getNativeAccessCode();
     if (native) return native;
