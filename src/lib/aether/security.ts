@@ -1,3 +1,12 @@
+/**
+ * Security helpers for ETA.
+ *
+ * SERVER MUST NOT push phone actions. The server may return suggested actions
+ * in an AI response; this device decides whether to run them, only during a
+ * user-initiated turn, with confirmation for high-impact actions (call, sms,
+ * lock, navigate).
+ */
+
 import type { PhoneAction, PhoneActionName } from "./types";
 
 export const HIGH_IMPACT_PHONE_ACTIONS: ReadonlySet<PhoneActionName> = new Set([
